@@ -1,0 +1,490 @@
+{
+    "citizens": [
+        {
+            "id": 1,
+            "job": "Лоббист",
+            "sex": "female",
+            "age": 60,
+            "size": "S",
+            "height": "large",
+            "color": "purple"
+        },
+        {
+            "id": 2,
+            "job": "Судья",
+            "sex": "female",
+            "age": 60,
+            "size": "L",
+            "height": "small",
+            "color": "blue"
+        },
+        {
+            "id": 3,
+            "job": "Ресторатор",
+            "sex": "female",
+            "age": 60,
+            "size": "M",
+            "height": "medium",
+            "color": "pink"
+        },
+        {
+            "id": 4,
+            "job": "Информатор",
+            "sex": "female",
+            "age": 20,
+            "size": "S",
+            "height": "small",
+            "color": "red"
+        },
+        {
+            "id": 5,
+            "job": "Когрессмен",
+            "sex": "male",
+            "age": 60,
+            "size": "L",
+            "height": "medium",
+            "color": "purple"
+        },
+        {
+            "id": 6,
+            "job": "Коронер",
+            "sex": "male",
+            "age": 60,
+            "size": "S",
+            "height": "small",
+            "color": "green"
+        },
+        {
+            "id": 7,
+            "job": "Агент",
+            "sex": "male",
+            "age": 20,
+            "size": "M",
+            "height": "large",
+            "color": "purple"
+        }, 
+        {
+            "id": 8,
+            "job": "Ветеран",
+            "sex": "male",
+            "age": 40,
+            "size": "M",
+            "height": "large",
+            "color": "brown"
+        },
+        {
+            "id": 9,
+            "job": "Журналист",
+            "sex": "female",
+            "age": 20,
+            "size": "M",
+            "height": "large",
+            "color": "yellow"
+        },
+        {
+            "id": 10,
+            "job": "Мэр",
+            "sex": "male",
+            "age": 40,
+            "size": "S",
+            "height": "small",
+            "color": "purple"
+        }, 
+        {
+            "id": 11,
+            "job": "Дон",
+            "sex": "male",
+            "age": 60,
+            "size": "S",
+            "height": "medium",
+            "color": "red"
+        }, 
+        {
+            "id": 12,
+            "job": "Пожарный",
+            "sex": "male",
+            "age": 40,
+            "size": "S",
+            "height": "large",
+            "color": "orange"
+        },
+        {
+            "id": 13,
+            "job": "Бартендер",
+            "sex": "female",
+            "age": 40,
+            "size": "L",
+            "height": "medium",
+            "color": "red"
+        },
+        {
+            "id": 14,
+            "job": "Моряк",
+            "sex": "male",
+            "age": 20,
+            "size": "S",
+            "height": "large",
+            "color": "lightBlue"
+        }, 
+        {
+            "id": 15,
+            "job": "Диспетчер",
+            "sex": "male",
+            "age": 60,
+            "size": "M",
+            "height": "large",
+            "color": "blue"
+        },
+        {
+            "id": 16,
+            "job": "Бездомный",
+            "sex": "male",
+            "age": 60,
+            "size": "S",
+            "height": "small",
+            "color": "brown"
+        }, 
+        {
+            "id": 17,
+            "job": "Психиатр",
+            "sex": "male",
+            "age": 60,
+            "size": "S",
+            "height": "large",
+            "color": "pink"
+        },
+        {
+            "id": 18,
+            "job": "Гангстер",
+            "sex": "male",
+            "age": 40,
+            "size": "M",
+            "height": "small",
+            "color": "red"
+        },
+        {
+            "id": 19,
+            "job": "Фотограф",
+            "sex": "male",
+            "age": 40,
+            "size": "L",
+            "height": "large",
+            "color": "yellow"
+        },
+        {
+            "id": 20,
+            "job": "Стюардесса",
+            "sex": "female",
+            "age": 40,
+            "size": "S",
+            "height": "medium",
+            "color": "lightBlue"
+        },
+        {
+            "id": 21,
+            "job": "Монашка",
+            "sex": "female",
+            "age": 60,
+            "size": "L",
+            "height": "large",
+            "color": "lightBlue"
+        },
+        {
+            "id": 22,
+            "job": "Спекулянт",
+            "sex": "female",
+            "age": 60,
+            "size": "M",
+            "height": "large",
+            "color": "red"
+        },
+        {
+            "id": 23,
+            "job": "Патрульный",
+            "sex": "male",
+            "age": 20,
+            "size": "S",
+            "height": "small",
+            "color": "blue"
+        },
+        {
+            "id": 24,
+            "job": "Инспектор",
+            "sex": "female",
+            "age": 20,
+            "size": "M",
+            "height": "medium",
+            "color": "blue"
+        },
+        {
+            "id": 25,
+            "job": "Художница",
+            "sex": "female",
+            "age": 40,
+            "size": "L",
+            "height": "large",
+            "color": "pink"
+        },
+        {
+            "id": 26,
+            "job": "Библиотекарь",
+            "sex": "female",
+            "age": 60,
+            "size": "S",
+            "height": "medium",
+            "color": "orange"
+        },
+        {
+            "id": 27,
+            "job": "Филантроп",
+            "sex": "male",
+            "age": 40,
+            "size": "M",
+            "height": "medium",
+            "color": "pink"
+        },
+        {
+            "id": 28,
+            "job": "Диктор",
+            "sex": "male",
+            "age": 60,
+            "size": "M",
+            "height": "small",
+            "color": "yellow"
+        },
+        {
+            "id": 29,
+            "job": "Аптекарь",
+            "sex": "female",
+            "age": 20,
+            "size": "L",
+            "height": "medium",
+            "color": "green"
+        },
+        {
+            "id": 30,
+            "job": "Почтальон",
+            "sex": "female",
+            "age": 40,
+            "size": "S",
+            "height": "small",
+            "color": "yellow"
+        },
+        {
+            "id": 31,
+            "job": "Актриса",
+            "sex": "female",
+            "age": 20,
+            "size": "S",
+            "height": "medium",
+            "color": "pink"
+        },
+        {
+            "id": 32,
+            "job": "Вдова",
+            "sex": "female",
+            "age": 40,
+            "size": "L",
+            "height": "small",
+            "color": "brown"
+        },
+        {
+            "id": 33,
+            "job": "Бриолинщик",
+            "sex": "male",
+            "age": 20,
+            "size": "L",
+            "height": "medium",
+            "color": "brown"
+        },
+        {
+            "id": 34,
+            "job": "Санитар",
+            "sex": "male",
+            "age": 20,
+            "size": "M",
+            "height": "small",
+            "color": "green"
+        },
+        {
+            "id": 35,
+            "job": "Профессор",
+            "sex": "male",
+            "age": 60,
+            "size": "M",
+            "height": "medium",
+            "color": "lightBlue"
+        },
+        {
+            "id": 36,
+            "job": "Вышибала",
+            "sex": "male",
+            "age": 20,
+            "size": "L",
+            "height": "large",
+            "color": "red"
+        },
+        {
+            "id": 37,
+            "job": "Бейсболист",
+            "sex": "male",
+            "age": 20,
+            "size": "L",
+            "height": "small",
+            "color": "pink"
+        },
+        {
+            "id": 38,
+            "job": "Посол",
+            "sex": "female",
+            "age": 40,
+            "size": "M",
+            "height": "medium",
+            "color": "purple"
+        },
+        {
+            "id": 39,
+            "job": "Водитель",
+            "sex": "male",
+            "age": 60,
+            "size": "L",
+            "height": "small",
+            "color": "orange"
+        },
+        {
+            "id": 40,
+            "job": "Хирург",
+            "sex": "male",
+            "age": 40,
+            "size": "S",
+            "height": "medium",
+            "color": "green"
+        },
+        {
+            "id": 41,
+            "job": "Мороженщик",
+            "sex": "male",
+            "age": 20,
+            "size": "M",
+            "height": "medium",
+            "color": "orange"
+        },
+        {
+            "id": 42,
+            "job": "Адвокат",
+            "sex": "female",
+            "age": 40,
+            "size": "S",
+            "height": "large",
+            "color": "blue"
+        },
+        {
+            "id": 43,
+            "job": "Редактор",
+            "sex": "female",
+            "age": 60,
+            "size": "L",
+            "height": "medium",
+            "color": "yellow"
+        },
+        {
+            "id": 44,
+            "job": "Кошатница",
+            "sex": "female",
+            "age": 60,
+            "size": "M",
+            "height": "medium",
+            "color": "brown"
+        },
+        {
+            "id": 45,
+            "job": "Прокурор",
+            "sex": "male",
+            "age": 40,
+            "size": "L",
+            "height": "medium",
+            "color": "blue"
+        },
+        {
+            "id": 46,
+            "job": "Ветеринар",
+            "sex": "male",
+            "age": 60,
+            "size": "L",
+            "height": "large",
+            "color": "green"
+        },
+        {
+            "id": 47,
+            "job": "Газетчик",
+            "sex": "male",
+            "age": 20,
+            "size": "S",
+            "height": "medium",
+            "color": "yellow"
+        },
+        {
+            "id": 48,
+            "job": "Танцовщица",
+            "sex": "female",
+            "age": 20,
+            "size": "S",
+            "height": "large",
+            "color": "brown"
+        },
+        {
+            "id": 49,
+            "job": "Медсестра",
+            "sex": "female",
+            "age": 40,
+            "size": "M",
+            "height": "large",
+            "color": "green"
+        },
+        {
+            "id": 50,
+            "job": "Секретарь",
+            "sex": "female",
+            "age": 20,
+            "size": "L",
+            "height": "small",
+            "color": "purple"
+        },
+        {
+            "id": 51,
+            "job": "Официантка",
+            "sex": "female",
+            "age": 40,
+            "size": "M",
+            "height": "small",
+            "color": "orange"
+        },
+        {
+            "id": 52,
+            "job": "Сварщица",
+            "sex": "female",
+            "age": 20,
+            "size": "L",
+            "height": "large",
+            "color": "orange"
+        },
+        {
+            "id": 53,
+            "job": "Гадалка",
+            "sex": "female",
+            "age": 20,
+            "size": "M",
+            "height": "small",
+            "color": "lightBlue"
+        },
+        {
+            "id": 54,
+            "job": "Музыкант",
+            "sex": "male",
+            "age": 40,
+            "size": "L",
+            "height": "small",
+            "color": "lightBlue"
+        }
+    ]
+}
