@@ -1,0 +1,27 @@
+{
+  "name": "@citykiller/server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.27",
+    "@nestjs/core": "^11.1.27",
+    "@nestjs/platform-express": "^11.1.27",
+    "@nestjs/platform-socket.io": "^11.1.27",
+    "@nestjs/websockets": "^11.1.27",
+    "better-sqlite3": "^12.11.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.23",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3"
+  }
+}

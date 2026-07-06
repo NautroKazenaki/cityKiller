@@ -1,12 +1,51 @@
-# React + Vite
+# City Killer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Перенос настольной игры «детектив против убийцы» на компьютер: онлайн-игра на двоих через WebSocket.
 
-Currently, two official plugins are available:
+## Структура
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- `packages/shared` — игровой движок: типы, правила, мотивы, валидация действий, виды состояния для каждой роли. Чистый TypeScript без React и сети, покрыт тестами (vitest).
+- `apps/server` — NestJS + socket.io: комнаты по коду, применение команд движком, рассылка отфильтрованных видов, SQLite-персистентность (better-sqlite3) и переподключение.
+- `apps/client` — React + Vite + Tailwind + shadcn/ui, TanStack Router/Query, socket.io-client. Экраны меню, лобби и игры для обеих ролей.
+- `apps/desktop` — обёртка Electron.
 
-## Expanding the ESLint configuration
+## Запуск (разработка)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+
+# 1. Сервер (собирает shared и стартует NestJS в watch-режиме, порт 3000)
+npm run dev:server
+
+# 2. Клиент (vite dev-сервер, порт 5173)
+npm run dev:client
+```
+
+Откройте http://localhost:5173 в двух окнах: один игрок создаёт комнату (выбрав роль), второй входит по коду.
+
+## Тесты
+
+```bash
+npm test        # юнит-тесты движка
+npm run e2e     # дымовые тесты через реальный сервер (сервер должен быть запущен)
+```
+
+## Electron
+
+```bash
+npm run build   # собрать shared + server + client
+npm run desktop # открыть собранный клиент в окне Electron
+```
+
+Для разработки: `CITYKILLER_DEV_URL=http://localhost:5173 npm run desktop`.
+
+Адрес сервера для клиента задаётся переменной `VITE_SERVER_URL` (по умолчанию `http://localhost:3000`).
+
+## Правила игры (кратко)
+
+- 20 жителей на карте 4x5, в углах по 2; максимум 3 жителя в районе.
+- Убийца — один из жителей. Он знает свой мотив (правило, кого можно убивать) и одну из 9 групп-помощников, за которую можно лгать.
+- Ночью убийца пугает 2 жителей и убивает 1 (нельзя себя, нельзя в районе полицейской машины, нельзя нарушать мотив).
+- После убийства машина детектива едет на место преступления, оставшиеся жители расселяются в соседние районы.
+- Днём у детектива 2 перемещения и 2 возможности: вопрос жителю в своём районе или эффект здания (участок — жетон с честным ответом на следующий ход, больница — снять испуг, пожарные — подвинуть группу, закусочная — вопрос в соседний район).
+- После 5-го убийства детектив обязан назвать профессию убийцы и мотив: угадал — победа, ошибся — поражение.

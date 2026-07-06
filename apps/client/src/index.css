@@ -1,0 +1,235 @@
+@tailwind base;
+
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+@tailwind components;
+@tailwind utilities;
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-display: 'Oswald', 'Inter', sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+/* ==== Нуарная тема: тёмный город, золото заголовков, кровь и полиция ==== */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.16 0.02 265);
+  --foreground: oklch(0.9 0.015 85);
+  --card: oklch(0.21 0.022 265);
+  --card-foreground: oklch(0.9 0.015 85);
+  --popover: oklch(0.19 0.022 265);
+  --popover-foreground: oklch(0.9 0.015 85);
+  --primary: oklch(0.8 0.12 80);
+  --primary-foreground: oklch(0.18 0.03 80);
+  --secondary: oklch(0.3 0.025 265);
+  --secondary-foreground: oklch(0.9 0.015 85);
+  --muted: oklch(0.27 0.02 265);
+  --muted-foreground: oklch(0.65 0.02 85);
+  --accent: oklch(0.45 0.12 255);
+  --accent-foreground: oklch(0.95 0.01 255);
+  --destructive: oklch(0.5 0.2 25);
+  --border: oklch(0.34 0.025 265);
+  --input: oklch(0.3 0.025 265);
+  --ring: oklch(0.8 0.12 80);
+
+  /* игровые цвета */
+  --gold: oklch(0.8 0.12 80);
+  --blood: oklch(0.5 0.2 25);
+  --police: oklch(0.55 0.15 255);
+  --night: oklch(0.3 0.08 285);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    width: 100%;
+    height: 100%;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: oklch(0.18 0.02 265);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.38 0.03 265);
+    border-radius: 5px;
+    border: 2px solid oklch(0.18 0.02 265);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.5 0.06 80);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* Золотой градиентный заголовок в духе арт-деко */
+  .text-gold {
+    background: linear-gradient(
+      175deg,
+      oklch(0.92 0.1 85) 0%,
+      oklch(0.8 0.13 80) 45%,
+      oklch(0.62 0.11 70) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 2px 12px oklch(0.7 0.12 80 / 0.35));
+  }
+
+  /* Фон города: виньетка + прожекторы */
+  .bg-noir {
+    background:
+      radial-gradient(ellipse 90% 60% at 50% -10%, oklch(0.32 0.06 265 / 0.55), transparent 60%),
+      radial-gradient(ellipse 60% 45% at 85% 110%, oklch(0.3 0.1 25 / 0.25), transparent 65%),
+      radial-gradient(ellipse 55% 45% at 10% 105%, oklch(0.3 0.09 255 / 0.28), transparent 65%),
+      var(--background);
+  }
+
+  .vignette::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse 120% 95% at 50% 45%, transparent 55%, oklch(0.08 0.02 265 / 0.75) 100%);
+    z-index: 5;
+  }
+
+  /* Панель-«досье» */
+  .noir-panel {
+    background: linear-gradient(180deg, oklch(0.235 0.024 265), oklch(0.2 0.022 265));
+    border: 1px solid oklch(0.36 0.03 265);
+    box-shadow:
+      0 1px 0 oklch(0.45 0.03 265 / 0.35) inset,
+      0 12px 32px oklch(0.05 0.02 265 / 0.55);
+  }
+
+  /* Асфальт квартала */
+  .district-tile {
+    background:
+      radial-gradient(circle at 30% 25%, oklch(0.32 0.02 265 / 0.65), transparent 55%),
+      linear-gradient(160deg, oklch(0.29 0.02 265), oklch(0.23 0.02 265) 70%);
+    box-shadow:
+      0 1px 0 oklch(0.42 0.02 265 / 0.5) inset,
+      0 -6px 16px oklch(0.1 0.02 265 / 0.5) inset;
+  }
+
+  .district-tile-hover:hover {
+    box-shadow:
+      0 0 0 2px oklch(0.7 0.12 80 / 0.6) inset,
+      0 0 24px oklch(0.7 0.12 80 / 0.25);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px oklch(0.65 0.16 255 / 0.55) inset, 0 0 18px oklch(0.65 0.16 255 / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 2px oklch(0.75 0.18 255 / 0.9) inset, 0 0 32px oklch(0.7 0.18 255 / 0.55);
+  }
+}
+
+@keyframes corpse-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.25) rotate(-4deg);
+    filter: blur(3px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+
+@keyframes night-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.45s ease-out both;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 1.6s ease-in-out infinite;
+}
+
+.animate-corpse-in {
+  animation: corpse-in 0.5s ease-out both;
+}
+
+.animate-night-flicker {
+  animation: night-flicker 2.2s ease-in-out infinite;
+}
