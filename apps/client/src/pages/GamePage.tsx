@@ -1,4 +1,4 @@
-import { Link, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { KillerScreen } from '@/components/game/KillerScreen';
 export function GamePage() {
   const { roomCode } = useParams({ from: '/game/$roomCode' });
   const room = useGameRoom(roomCode);
+  const navigate = useNavigate();
 
   if (!room.session) {
     return (
@@ -72,6 +73,29 @@ export function GamePage() {
 
   const phase = room.view.phase;
 
+  // Детектив уже переведён на новый интерфейс «Дело на столе» — со своей верхней лентой
+  if (room.view.role === 'detective') {
+    return (
+      <div className="w-screen h-screen overflow-hidden">
+        <DetectiveScreen
+          view={room.view}
+          sendCommand={room.sendCommand}
+          actionError={room.actionError}
+          roomCode={room.session.roomCode}
+          myName={room.session.username}
+          opponentName={opponentInfo?.username ?? 'Убийца'}
+          opponentConnected={opponentInfo?.connected ?? false}
+          onMenu={() => navigate({ to: '/' })}
+        />
+        <FinalDialog
+          open={room.view.phase === 'finished'}
+          win={room.view.winner === room.session.role}
+          reason={room.view.winReason}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="w-screen h-screen bg-noir flex flex-col overflow-hidden">
       <header className="h-12 border-b border-border/60 px-4 flex items-center justify-between shrink-0 backdrop-blur-sm">
@@ -107,19 +131,11 @@ export function GamePage() {
       </header>
 
       <main className="flex-1 min-h-0 p-3">
-        {room.view.role === 'detective' ? (
-          <DetectiveScreen
-            view={room.view}
-            sendCommand={room.sendCommand}
-            actionError={room.actionError}
-          />
-        ) : (
-          <KillerScreen
-            view={room.view}
-            sendCommand={room.sendCommand}
-            actionError={room.actionError}
-          />
-        )}
+        <KillerScreen
+          view={room.view}
+          sendCommand={room.sendCommand}
+          actionError={room.actionError}
+        />
       </main>
 
       {/* Конец игры */}
@@ -141,6 +157,24 @@ export function GamePage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function FinalDialog({ open, win, reason }: { open: boolean; win: boolean; reason: string | null }) {
+  return (
+    <Dialog open={open}>
+      <DialogContent showCloseButton={false} className="noir-panel text-center">
+        <DialogHeader>
+          <DialogTitle className="font-display text-4xl uppercase tracking-widest text-center text-gold">
+            {win ? 'Победа' : 'Поражение'}
+          </DialogTitle>
+          <DialogDescription className="text-center text-base pt-2">{reason}</DialogDescription>
+        </DialogHeader>
+        <Link to="/" className="w-full">
+          <Button className="w-full font-display uppercase tracking-widest">Вернуться в меню</Button>
+        </Link>
+      </DialogContent>
+    </Dialog>
   );
 }
 

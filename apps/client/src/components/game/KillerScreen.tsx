@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
-import { BoardView } from './BoardView';
+import { GameSheet } from './sheet/GameSheet';
 import { CitizenCard } from './CitizenCard';
 import { LogPanel } from './LogPanel';
 import { ALL_GROUPS_LABELED } from './groups';
@@ -154,15 +154,16 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
 
   return (
     <div className="grid grid-cols-12 gap-4 w-full h-full min-h-0">
-      <div className="col-span-8 min-h-0">
-        <BoardView
+      <div className="col-span-8 min-h-0 flex items-start justify-center overflow-auto">
+        <GameSheet
+          gameId={view.id}
           citizens={view.citizens}
           positions={view.positions}
           buildings={view.buildings}
           detective={view.detective}
           policeTokens={view.policeTokens}
           victims={view.victims}
-          highlightDistricts={cityHighlightDistricts}
+          availableDistricts={cityHighlightDistricts}
           onDistrictClick={handleDistrictClick}
           selectableCitizenIds={selectableCitizenIds}
           selectedCitizenIds={view.phase === 'city' ? Object.keys(cityMoves).map(Number) : scareTargets}
