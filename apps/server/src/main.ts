@@ -30,8 +30,18 @@ async function bootstrap(): Promise<void> {
 
   const clientBuild = findClientBuild();
   if (clientBuild) {
-    // maxAge — на хешированные ассеты; index.html vite отдаёт без хеша, его не кешируем
-    app.useStaticAssets(clientBuild, { maxAge: '1h', index: 'index.html' });
+    app.useStaticAssets(clientBuild, {
+      index: 'index.html',
+      setHeaders(res, filePath) {
+        // Имена ассетов содержат хеш содержимого — их можно кешировать надолго.
+        // index.html хеша не имеет: закешируй его, и после пересборки игроки
+        // будут час сидеть на старой версии, пока не почистят кеш руками.
+        res.setHeader(
+          'Cache-Control',
+          filePath.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable'
+        );
+      }
+    });
   }
 
   const port = Number(process.env.PORT ?? 3000);

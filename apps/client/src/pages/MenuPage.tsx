@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Rules } from '@/components/Rules';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { PlayerRole } from '@citykiller/shared';
@@ -66,6 +67,7 @@ export function MenuPage() {
   const [role, setRole] = useState<PlayerRole>('detective');
   const [mode, setMode] = useState<Mode>('bot');
   const [joinCode, setJoinCode] = useState('');
+  const [panel, setPanel] = useState<'rules' | 'archive'>('rules');
   const [error, setError] = useState<string | null>(null);
 
   const history = useQuery({
@@ -440,11 +442,13 @@ export function MenuPage() {
           </div>
         </div>
 
-        {/* ===== АРХИВ ДЕЛ ===== */}
+        {/* ===== ПРАВИЛА / АРХИВ ДЕЛ ===== */}
         <div
           style={{
             width: 420,
-            minHeight: 660,
+            // фиксируем, а не minHeight: иначе длинный текст правил распирает
+            // панель и правый столбец уезжает ниже левого
+            height: 660,
             flexShrink: 0,
             borderRadius: 6,
             background: 'oklch(0.225 0.013 55)',
@@ -457,17 +461,48 @@ export function MenuPage() {
         >
           <div
             style={{
-              padding: '13px 15px',
-              borderBottom: '1px solid oklch(0.28 0.015 55)',
-              fontFamily: FONT.mono,
-              fontSize: 10,
-              letterSpacing: '0.26em',
-              color: 'oklch(0.6 0.014 80)'
+              display: 'flex',
+              flexShrink: 0,
+              borderBottom: '1px solid oklch(0.28 0.015 55)'
             }}
           >
-            АРХИВ ПОЛИЦЕЙСКИХ СВОДОК
+            {(
+              [
+                { id: 'rules', label: 'ПРАВИЛА' },
+                { id: 'archive', label: `АРХИВ · ${history.data?.length ?? 0}` }
+              ] as const
+            ).map(t => {
+              const on = t.id === panel;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setPanel(t.id)}
+                  style={{
+                    flex: 1,
+                    height: 42,
+                    border: 'none',
+                    borderBottom: `2px solid ${on ? P.gold : 'transparent'}`,
+                    background: on ? 'oklch(0.245 0.015 60)' : 'transparent',
+                    color: on ? P.gold : 'oklch(0.56 0.014 80)',
+                    fontFamily: FONT.mono,
+                    fontSize: 10,
+                    letterSpacing: '0.22em',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+
+          {panel === 'rules' && (
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <Rules />
+            </div>
+          )}
+
+          <div style={{ flex: 1, overflowY: 'auto', display: panel === 'archive' ? 'block' : 'none' }}>
             {history.isLoading && (
               <p style={{ margin: 0, padding: 15, fontSize: 12.5, color: 'oklch(0.6 0.014 80)' }}>
                 Загрузка...

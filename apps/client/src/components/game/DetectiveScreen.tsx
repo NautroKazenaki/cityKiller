@@ -12,6 +12,7 @@ import { districtTitle } from '@/design/city';
 import { GROUP_LABELS, districtName } from '@/lib/labels';
 import { GameSheet } from './sheet/GameSheet';
 import { TopBar } from './shell/TopBar';
+import { RulesSheet } from '@/components/RulesSheet';
 import { LeftColumn } from './shell/LeftColumn';
 import { CaseFolder, type CitizenState } from './shell/CaseFolder';
 import { CaseTabs } from './shell/CaseTabs';
@@ -48,6 +49,7 @@ export function DetectiveScreen({
 }: DetectiveScreenProps) {
   const [selected, setSelected] = useState<{ x: number; y: number } | null>(null);
   const [tab, setTab] = useState<'place' | 'journal' | 'motives'>('place');
+  const [rulesOpen, setRulesOpen] = useState(false);
   /** Вычеркнутые мотивы — личные пометки детектива, движок о них не знает */
   const [crossedMotives, setCrossedMotives] = useState<string[]>([]);
   const [mode, setMode] = useState<TargetMode>('idle');
@@ -537,6 +539,13 @@ export function DetectiveScreen({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // справка доступна всегда, даже поверх допроса и обвинения
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setRulesOpen(v => !v);
+        return;
+      }
+      if (rulesOpen) return;
       if (questionTarget || accuseOpen || view.phase === 'accusation') return;
       if (e.key === 'Escape') {
         resetModes();
@@ -550,7 +559,7 @@ export function DetectiveScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [actions, questionTarget, accuseOpen, view.phase]);
+  }, [actions, questionTarget, accuseOpen, view.phase, rulesOpen]);
 
   // подсказка режима выбора цели
   const modeHint =
@@ -600,7 +609,10 @@ export function DetectiveScreen({
         turnNumber={view.turnNumber}
         killsCount={view.killsCount}
         onMenu={onMenu}
+        onRules={() => setRulesOpen(true)}
       />
+
+      <RulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} />
 
       <div
         style={{

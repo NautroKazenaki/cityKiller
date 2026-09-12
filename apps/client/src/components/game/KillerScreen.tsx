@@ -6,6 +6,7 @@ import { GROUP_LABELS, questionText } from '@/lib/labels';
 import { GameSheet } from './sheet/GameSheet';
 import type { ChitMarker } from './sheet/Chit';
 import { TopBar } from './shell/TopBar';
+import { RulesSheet } from '@/components/RulesSheet';
 import { LeftColumn } from './shell/LeftColumn';
 import { KillerFolder, KillerButton, type NightStep } from './shell/KillerFolder';
 import { HintBox } from './shell/ActionRow';
@@ -34,7 +35,19 @@ export function KillerScreen({
   opponentConnected,
   onMenu
 }: KillerScreenProps) {
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [nightMode, setNightMode] = useState<NightMode>('kill');
+
+  // F1 — справка, как и у детектива
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F1') return;
+      e.preventDefault();
+      setRulesOpen(v => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [killTarget, setKillTarget] = useState<number | null>(null);
   const [scareTargets, setScareTargets] = useState<number[]>([]);
   const [declineChosen, setDeclineChosen] = useState(false);
@@ -297,7 +310,10 @@ export function KillerScreen({
         turnNumber={view.turnNumber}
         killsCount={view.killsCount}
         onMenu={onMenu}
+        onRules={() => setRulesOpen(true)}
       />
+
+      <RulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} />
 
       <div
         style={{

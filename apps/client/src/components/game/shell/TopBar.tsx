@@ -11,16 +11,37 @@ const PHASES: Array<{ key: GamePhase; label: string }> = [
   { key: 'accusation', label: 'ОБВИНЕНИЕ' }
 ];
 
+const BAR_BUTTON: React.CSSProperties = {
+  height: 30,
+  padding: '0 13px',
+  borderRadius: 3,
+  border: '1px solid oklch(0.3 0.015 55)',
+  background: 'transparent',
+  color: 'oklch(0.72 0.014 80)',
+  fontFamily: FONT.mono,
+  fontSize: 11,
+  letterSpacing: '0.14em',
+  cursor: 'pointer'
+};
+
 interface TopBarProps {
   roomCode: string;
   phase: GamePhase;
   turnNumber: number;
   killsCount: number;
   onMenu: () => void;
+  onRules: () => void;
 }
 
 /** Фазовая лента вместо бейджа: игрок видит весь круг хода и текущую позицию в нём. */
-export function TopBar({ roomCode, phase, turnNumber, killsCount, onMenu }: TopBarProps) {
+export function TopBar({
+  roomCode,
+  phase,
+  turnNumber,
+  killsCount,
+  onMenu,
+  onRules
+}: TopBarProps) {
   return (
     <header
       style={{
@@ -153,23 +174,14 @@ export function TopBar({ roomCode, phase, turnNumber, killsCount, onMenu }: TopB
 
       <div style={{ width: 1, height: 24, background: 'oklch(0.29 0.015 55)' }} />
 
-      <button
-        onClick={onMenu}
-        style={{
-          height: 30,
-          padding: '0 13px',
-          borderRadius: 3,
-          border: '1px solid oklch(0.3 0.015 55)',
-          background: 'transparent',
-          color: 'oklch(0.72 0.014 80)',
-          fontFamily: FONT.mono,
-          fontSize: 11,
-          letterSpacing: '0.14em',
-          cursor: 'pointer'
-        }}
-      >
-        МЕНЮ
-      </button>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={onRules} title="Правила · F1" style={BAR_BUTTON}>
+          ПРАВИЛА
+        </button>
+        <button onClick={onMenu} style={BAR_BUTTON}>
+          МЕНЮ
+        </button>
+      </div>
     </header>
   );
 }
