@@ -65,8 +65,19 @@ export type GamePhase =
   | 'night' // ход убийцы: 2 испуга + 1 убийство
   | 'relocation' // детектив расселяет жителей с места преступления
   | 'day' // ход детектива: 2 перемещения + 2 возможности
+  | 'city' // фаза Города: население + перемещение по жетонам соц. групп
   | 'accusation' // после 5-го убийства: обязательное обвинение
   | 'finished';
+
+export type CityStage = 'killer' | 'detective';
+
+export interface CityState {
+  stage: CityStage;
+  /** Жетон соц. группы, показанный обеим сторонам */
+  group: CitizenGroup;
+  /** Если в этой группе не осталось живых жителей — действующий игрок обязан выбрать другую группу */
+  emptyGroupNotice: CitizenGroup | null;
+}
 
 // Вопрос о характеристике убийцы: «убийца мужского пола?», «убийце 20 лет?» и т.д.
 export type QuestionAttribute = 'sex' | 'age' | 'size' | 'height';
@@ -157,6 +168,8 @@ export interface GameState {
   motiveOptions: string[];
   detective: { x: number; y: number } | null;
   killsCount: number;
+  /** Убийца уже воспользовался разовым отказом от убийства за эту партию */
+  declinedKillUsed: boolean;
   /** Жертвы в порядке убийства */
   victims: Victim[];
   /** Район последнего убийства (для фазы relocation) */
@@ -167,6 +180,10 @@ export interface GameState {
   pendingQuestion: PendingQuestion | null;
   answers: AnsweredQuestion[];
   policeAnswers: PoliceTokenAnswer[];
+  /** Текущее состояние фазы Города (кто ходит, какая группа), null вне этой фазы */
+  city: CityState | null;
+  /** Пул доступных жетонов соц. групп для фазы Города — группы без живых жителей удаляются из него навсегда */
+  cityTokenPool: CitizenGroup[];
   winner: PlayerRole | null;
   winReason: string | null;
   log: GameLogEntry[];
@@ -236,6 +253,18 @@ export interface AccuseCommand {
   motiveId: string;
 }
 
+/** Фаза Города: действующий игрок (по state.city.stage) выбирает другую группу вместо пустой */
+export interface CityChooseGroupCommand {
+  type: 'city:chooseGroup';
+  group: CitizenGroup;
+}
+
+/** Фаза Города: перемещение жителей текущей показанной группы (можно передать пустой список — никого не двигать) */
+export interface CityMoveCommand {
+  type: 'city:moveGroup';
+  moves: Array<{ citizenId: number; toX: number; toY: number }>;
+}
+
 export type GameCommand =
   | PlaceCarCommand
   | NightCommand
@@ -246,7 +275,9 @@ export type GameCommand =
   | UseBuildingCommand
   | PoliceQuestionCommand
   | EndTurnCommand
-  | AccuseCommand;
+  | AccuseCommand
+  | CityChooseGroupCommand
+  | CityMoveCommand;
 
 // ==== Виды состояния для каждой стороны ====
 
@@ -271,6 +302,7 @@ export interface DetectiveView {
   motiveOptions: string[];
   detective: { x: number; y: number } | null;
   killsCount: number;
+  declinedKillUsed: boolean;
   victims: Victim[];
   lastCrimeDistrict: { x: number; y: number } | null;
   policeTokens: PoliceToken[];
@@ -278,6 +310,7 @@ export interface DetectiveView {
   pendingQuestion: PendingQuestionPublic | null;
   answers: AnsweredQuestion[];
   policeAnswers: PoliceTokenAnswer[];
+  city: CityState | null;
   winner: PlayerRole | null;
   winReason: string | null;
   log: GameLogEntry[];
@@ -298,6 +331,7 @@ export interface KillerView {
   validKillTargets: number[];
   detective: { x: number; y: number } | null;
   killsCount: number;
+  declinedKillUsed: boolean;
   victims: Victim[];
   lastCrimeDistrict: { x: number; y: number } | null;
   policeTokens: PoliceToken[];
@@ -305,6 +339,7 @@ export interface KillerView {
   pendingQuestion: PendingQuestion | null;
   answers: AnsweredQuestion[];
   policeAnswers: PoliceTokenAnswer[];
+  city: CityState | null;
   winner: PlayerRole | null;
   winReason: string | null;
   log: GameLogEntry[];

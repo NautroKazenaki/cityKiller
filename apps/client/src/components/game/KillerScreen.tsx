@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import type { GameCommand, KillerView } from '@citykiller/shared';
-import { MOTIVE_DESCRIPTORS, SCARES_PER_NIGHT } from '@citykiller/shared';
+import type { CitizenGroup, GameCommand, KillerView } from '@citykiller/shared';
+import { MOTIVE_DESCRIPTORS, SCARES_PER_NIGHT, getNeighbors } from '@citykiller/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +14,7 @@ import {
 import { BoardView } from './BoardView';
 import { CitizenCard } from './CitizenCard';
 import { LogPanel } from './LogPanel';
+import { ALL_GROUPS_LABELED } from './groups';
 import { GROUP_LABELS, questionText } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +30,11 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
   const [nightMode, setNightMode] = useState<NightMode>('kill');
   const [killTarget, setKillTarget] = useState<number | null>(null);
   const [scareTargets, setScareTargets] = useState<number[]>([]);
+  const [declineChosen, setDeclineChosen] = useState(false);
+
+  // Фаза Города: перемещение своей группы
+  const [cityMoves, setCityMoves] = useState<Record<number, { x: number; y: number }>>({});
+  const [citySelected, setCitySelected] = useState<number | null>(null);
 
   const killerCitizen = view.citizens.find(c => c.id === view.killer.citizenId)!;
   const killerPosition = view.positions.find(p => p.citizenId === view.killer.citizenId);
@@ -45,15 +51,48 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
   );
   const requiredScares = Math.min(SCARES_PER_NIGHT, scareCandidates.length);
 
+  const isCityMyTurn = view.phase === 'city' && view.city?.stage === 'killer';
+
   const selectableCitizenIds = useMemo(() => {
+    if (view.phase === 'city') {
+      if (!isCityMyTurn || view.city?.emptyGroupNotice) return [];
+      const group = view.city!.group;
+      return view.positions
+        .filter(p => !p.isDead && view.citizens.find(c => c.id === p.citizenId)?.group === group)
+        .map(p => p.citizenId);
+    }
     if (!isNight) return [];
     return nightMode === 'kill' ? view.validKillTargets : scareCandidates;
-  }, [isNight, nightMode, view.validKillTargets, scareCandidates]);
+  }, [isNight, nightMode, view.validKillTargets, scareCandidates, view.phase, view.city, view.positions, view.citizens, isCityMyTurn]);
+
+  const cityHighlightDistricts = useMemo(() => {
+    if (view.phase !== 'city' || citySelected === null) return [];
+    const pos = view.positions.find(p => p.citizenId === citySelected);
+    return pos ? getNeighbors(pos.districtX, pos.districtY) : [];
+  }, [view.phase, view.positions, citySelected]);
+
+  const livingGroupsExcept = (except: CitizenGroup) =>
+    ALL_GROUPS_LABELED.filter(
+      g =>
+        g.value !== except &&
+        view.citizens.some(c => {
+          if (c.group !== g.value) return false;
+          const pos = view.positions.find(p => p.citizenId === c.id);
+          return pos !== undefined && !pos.isDead;
+        })
+    );
+
+  const canDecline = view.validKillTargets.length > 0 && !view.declinedKillUsed;
 
   const handleCitizenClick = (citizenId: number) => {
+    if (view.phase === 'city') {
+      setCitySelected(citizenId);
+      return;
+    }
     if (!isNight) return;
     if (nightMode === 'kill') {
       setKillTarget(prev => (prev === citizenId ? null : citizenId));
+      setDeclineChosen(false);
       setScareTargets(prev => prev.filter(id => id !== citizenId));
     } else {
       setScareTargets(prev => {
@@ -64,19 +103,43 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
     }
   };
 
+  const handleDistrictClick = (x: number, y: number) => {
+    if (view.phase !== 'city' || citySelected === null) return;
+    setCityMoves(prev => ({ ...prev, [citySelected]: { x, y } }));
+    setCitySelected(null);
+  };
+
+  const submitCityMove = async () => {
+    const moves = Object.entries(cityMoves).map(([citizenId, to]) => ({
+      citizenId: Number(citizenId),
+      toX: to.x,
+      toY: to.y
+    }));
+    const ok = await sendCommand({ type: 'city:moveGroup', moves });
+    if (ok) {
+      setCityMoves({});
+      setCitySelected(null);
+    }
+  };
+
+  const chooseCityGroup = (group: CitizenGroup) => {
+    void sendCommand({ type: 'city:chooseGroup', group });
+  };
+
   const canSubmitNight =
     scareTargets.length === requiredScares &&
-    (killTarget !== null || view.validKillTargets.length === 0);
+    (killTarget !== null || view.validKillTargets.length === 0 || declineChosen);
 
   const submitNight = async () => {
     const ok = await sendCommand({
       type: 'killer:night',
       scareIds: scareTargets,
-      killId: killTarget
+      killId: declineChosen ? null : killTarget
     });
     if (ok) {
       setKillTarget(null);
       setScareTargets([]);
+      setDeclineChosen(false);
       setNightMode('kill');
     }
   };
@@ -99,9 +162,11 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
           detective={view.detective}
           policeTokens={view.policeTokens}
           victims={view.victims}
+          highlightDistricts={cityHighlightDistricts}
+          onDistrictClick={handleDistrictClick}
           selectableCitizenIds={selectableCitizenIds}
-          selectedCitizenIds={scareTargets}
-          markedCitizenId={killTarget}
+          selectedCitizenIds={view.phase === 'city' ? Object.keys(cityMoves).map(Number) : scareTargets}
+          markedCitizenId={view.phase === 'city' ? citySelected : killTarget}
           onCitizenClick={handleCitizenClick}
         />
       </div>
@@ -197,9 +262,71 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
                   Выберите {requiredScares} жителей, которых запугаете (они не смогут отвечать).
                 </p>
               )}
+              {canDecline && (
+                <Button
+                  size="sm"
+                  variant={declineChosen ? 'default' : 'outline'}
+                  className="w-full"
+                  onClick={() => {
+                    setDeclineChosen(prev => !prev);
+                    setKillTarget(null);
+                  }}
+                >
+                  {declineChosen ? '✓ ' : ''}Отказаться от убийства этой ночью (доступно один раз за игру)
+                </Button>
+              )}
+              {view.declinedKillUsed && (
+                <p className="text-xs text-muted-foreground">
+                  Отказ от убийства уже использован в этой партии — второй отказ будет означать поражение.
+                </p>
+              )}
               <Button className="w-full" disabled={!canSubmitNight} onClick={submitNight}>
                 Совершить ночные дела
               </Button>
+            </CardContent>
+          </Card>
+        ) : view.phase === 'city' ? (
+          <Card className="noir-panel">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-display uppercase tracking-wider">
+                🏙️ Фаза Города
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {!isCityMyTurn ? (
+                <p className="animate-pulse">
+                  Ходит Детектив (группа «{view.city ? GROUP_LABELS[view.city.group] : ''}»)...
+                </p>
+              ) : view.city?.emptyGroupNotice ? (
+                <div className="space-y-2">
+                  <p>
+                    Жетон «{GROUP_LABELS[view.city.emptyGroupNotice]}» — живых представителей не
+                    осталось. Выберите другую группу (этот жетон уйдёт из игры навсегда):
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {livingGroupsExcept(view.city.emptyGroupNotice).map(g => (
+                      <Button
+                        key={g.value}
+                        size="sm"
+                        variant="outline"
+                        onClick={() => chooseCityGroup(g.value)}
+                      >
+                        {g.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p>
+                    Жетон группы «{view.city ? GROUP_LABELS[view.city.group] : ''}». Кликните
+                    жителя группы, затем соседний район. Можно никого не двигать.
+                  </p>
+                  <Button className="w-full" onClick={submitCityMove}>
+                    Готово
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (

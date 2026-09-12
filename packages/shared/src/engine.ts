@@ -1,9 +1,11 @@
 import {
   KILLS_TO_WIN,
   MAX_CITIZENS_PER_DISTRICT,
+  MAX_ROUNDS,
   SCARES_PER_NIGHT,
   aliveCitizensIn,
   areNeighbors,
+  getNeighbors,
   isInsideBoard,
   isSameDistrict,
   nextSubPosition
@@ -13,7 +15,11 @@ import {
   AccuseCommand,
   AnswerCommand,
   Citizen,
+  CitizenGroup,
   CitizenPosition,
+  CityChooseGroupCommand,
+  CityMoveCommand,
+  CityStage,
   GameCommand,
   GameState,
   MoveCommand,
@@ -60,6 +66,11 @@ function getPosition(state: GameState, id: number): CitizenPosition | undefined 
 
 function citizenName(state: GameState, id: number): string {
   return getCitizen(state, id)?.job ?? `#${id}`;
+}
+
+/** Место преступления помечено навсегда — маркеры остаются на карте до конца партии */
+function isCrimeScene(state: GameState, x: number, y: number): boolean {
+  return state.victims.some(v => v.districtX === x && v.districtY === y);
 }
 
 function resetTurn(state: GameState): void {
@@ -151,11 +162,20 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
 
   // --- Убийство ---
   const validTargets = getValidKillTargets(state);
-  if (cmd.killId === null) {
-    if (validTargets.length > 0) {
-      return fail('Есть доступные жертвы — пропустить убийство нельзя');
+  const isVoluntaryDecline = cmd.killId === null && validTargets.length > 0;
+  if (isVoluntaryDecline && state.declinedKillUsed) {
+    // Вторая попытка отказаться от убийства — Убийца автоматически проигрывает
+    for (const id of uniqueScares) {
+      getPosition(state, id)!.isScared = true;
     }
-  } else if (!validTargets.includes(cmd.killId)) {
+    state.lastNight = { scaredIds: uniqueScares, killedId: null };
+    state.phase = 'finished';
+    state.winner = 'detective';
+    state.winReason = 'Убийца повторно отказался от убийства — автоматическое поражение.';
+    log(state, 'system', state.winReason);
+    return { ok: true, state };
+  }
+  if (cmd.killId !== null && !validTargets.includes(cmd.killId)) {
     return fail('Эту жертву убить нельзя: правила или мотив запрещают');
   }
 
@@ -166,7 +186,12 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
   state.lastNight = { scaredIds: uniqueScares, killedId: cmd.killId };
 
   if (cmd.killId === null) {
-    log(state, 'killer', 'Ночью никто не был убит: у убийцы не было доступных жертв.');
+    if (isVoluntaryDecline) {
+      state.declinedKillUsed = true;
+      log(state, 'killer', 'Убийца отказался от убийства этой ночью (доступно один раз за игру).');
+    } else {
+      log(state, 'killer', 'Ночью никто не был убит: у убийцы не было доступных жертв.');
+    }
     state.phase = 'day';
     resetTurn(state);
     return { ok: true, state };
@@ -224,9 +249,19 @@ function applyRelocate(state: GameState, cmd: RelocateCommand): ApplyResult {
     return fail('Нужно переместить всех живых жителей с места преступления');
   }
 
+  // Исключение: если все соседние районы уже заполнены до предела, разрешается
+  // расселить в любой квартал города (а не только в соседний).
+  const neighbors = getNeighbors(crime.x, crime.y);
+  const allNeighborsFull = neighbors.every(
+    n => aliveCitizensIn(state.positions, n.x, n.y).length >= MAX_CITIZENS_PER_DISTRICT
+  );
+
   for (const move of cmd.moves) {
     if (!isInsideBoard(move.toX, move.toY)) return fail('Район вне карты');
-    if (!areNeighbors(crime.x, crime.y, move.toX, move.toY)) {
+    if (isSameDistrict({ x: move.toX, y: move.toY }, crime)) {
+      return fail('Нельзя оставить жителя на месте преступления');
+    }
+    if (!areNeighbors(crime.x, crime.y, move.toX, move.toY) && !allNeighborsFull) {
       return fail('Жителей можно расселять только в соседние районы');
     }
   }
@@ -371,6 +406,9 @@ function applyUseBuilding(state: GameState, cmd: UseBuildingCommand): ApplyResul
         if (!areNeighbors(pos.districtX, pos.districtY, move.toX, move.toY)) {
           return fail('Каждого жителя можно сдвинуть только на один район');
         }
+        if (isCrimeScene(state, move.toX, move.toY)) {
+          return fail('Нельзя перемещать жителей на место преступления');
+        }
       }
       const updated = state.positions.map(p => {
         const move = moves.find(m => m.citizenId === p.citizenId);
@@ -428,7 +466,8 @@ function applyUseBuilding(state: GameState, cmd: UseBuildingCommand): ApplyResul
 }
 
 function applyPoliceQuestion(state: GameState, cmd: PoliceQuestionCommand): ApplyResult {
-  if (state.turn.abilitiesLeft <= 0) return fail('Возможности на этот ход закончились');
+  // Слежка — бесплатное действие (не входит в лимит 2 основных действий),
+  // можно выполнять сколько угодно раз за фазу.
   if (state.pendingQuestion) return fail('Сначала дождитесь ответа на предыдущий вопрос');
 
   const token = state.policeTokens.find(t => t.citizenId === cmd.citizenId);
@@ -447,7 +486,6 @@ function applyPoliceQuestion(state: GameState, cmd: PoliceQuestionCommand): Appl
     turnNumber: state.turnNumber
   });
   state.policeTokens = state.policeTokens.filter(t => t.citizenId !== cmd.citizenId);
-  state.turn.abilitiesLeft -= 1;
   log(
     state,
     'system',
@@ -456,11 +494,145 @@ function applyPoliceQuestion(state: GameState, cmd: PoliceQuestionCommand): Appl
   return { ok: true, state };
 }
 
-function applyEndTurn(state: GameState): ApplyResult {
-  if (state.pendingQuestion) return fail('Сначала дождитесь ответа на вопрос');
+function livingMembersOfGroup(state: GameState, group: CitizenGroup): number[] {
+  return state.citizens
+    .filter(c => c.group === group)
+    .map(c => c.id)
+    .filter(id => {
+      const pos = getPosition(state, id);
+      return pos !== undefined && !pos.isDead;
+    });
+}
+
+/** Тянет один жетон соц. группы из пула; не изменяет пул сам по себе */
+function drawCityGroup(state: GameState): { group: CitizenGroup; empty: boolean } | null {
+  if (state.cityTokenPool.length === 0) return null;
+  const idx = Math.floor(Math.random() * state.cityTokenPool.length);
+  const group = state.cityTokenPool[idx];
+  const empty = livingMembersOfGroup(state, group).length === 0;
+  return { group, empty };
+}
+
+function beginCityStage(state: GameState, stage: CityStage): void {
+  const draw = drawCityGroup(state);
+  if (!draw) {
+    finalizeRound(state);
+    return;
+  }
+  state.phase = 'city';
+  state.city = { stage, group: draw.group, emptyGroupNotice: draw.empty ? draw.group : null };
+  const who = stage === 'killer' ? 'Убийца' : 'Детектив';
+  log(
+    state,
+    'system',
+    `Фаза Города: ${who} тянет жетон группы «${draw.group}»${
+      draw.empty ? ' — живых представителей не осталось, нужно выбрать другую группу' : ''
+    }.`
+  );
+}
+
+function finalizeRound(state: GameState): void {
+  state.city = null;
+  if (state.turnNumber >= MAX_ROUNDS) {
+    state.phase = 'finished';
+    state.winner = 'detective';
+    state.winReason = `Прошло ${MAX_ROUNDS} раундов, Убийца не успел довести дело до ${KILLS_TO_WIN} убийств — автоматическая победа Детектива.`;
+    log(state, 'system', state.winReason);
+    return;
+  }
   state.turnNumber += 1;
   state.phase = 'night';
-  log(state, 'detective', 'Детектив закончил ход. Наступает ночь.');
+  log(state, 'system', 'Фаза Города завершена. Наступает ночь.');
+}
+
+function applyEndTurn(state: GameState): ApplyResult {
+  if (state.pendingQuestion) return fail('Сначала дождитесь ответа на вопрос');
+  log(state, 'detective', 'Детектив закончил ход.');
+
+  // Работа с населением: запуганные жители в квартале Детектива автоматически успокаиваются
+  if (state.detective) {
+    const { x, y } = state.detective;
+    for (const p of state.positions) {
+      if (!p.isDead && p.isScared && p.districtX === x && p.districtY === y) {
+        p.isScared = false;
+      }
+    }
+  }
+
+  beginCityStage(state, 'killer');
+  return { ok: true, state };
+}
+
+function applyCityChooseGroup(state: GameState, cmd: CityChooseGroupCommand): ApplyResult {
+  if (!state.city || !state.city.emptyGroupNotice) {
+    return fail('Сейчас не нужно выбирать замену группе');
+  }
+  if (cmd.group === state.city.emptyGroupNotice) {
+    return fail('В этой группе нет живых жителей — выберите другую');
+  }
+  if (livingMembersOfGroup(state, cmd.group).length === 0) {
+    return fail('В выбранной группе тоже нет живых жителей');
+  }
+  // Пустой жетон навсегда покидает пул
+  const emptyGroup = state.city.emptyGroupNotice;
+  state.cityTokenPool = state.cityTokenPool.filter(g => g !== emptyGroup);
+  state.city = { stage: state.city.stage, group: cmd.group, emptyGroupNotice: null };
+  log(state, 'system', `Жетон группы «${emptyGroup}» удалён из игры навсегда. Выбрана группа «${cmd.group}».`);
+  return { ok: true, state };
+}
+
+function applyCityMove(state: GameState, cmd: CityMoveCommand): ApplyResult {
+  if (!state.city) return fail('Сейчас не фаза Города');
+  if (state.city.emptyGroupNotice) return fail('Сначала выберите другую группу вместо пустой');
+
+  const groupMembers = new Set(
+    state.citizens.filter(c => c.group === state.city!.group).map(c => c.id)
+  );
+  const seen = new Set<number>();
+  for (const move of cmd.moves) {
+    if (seen.has(move.citizenId)) return fail('Каждого жителя можно переместить только один раз');
+    seen.add(move.citizenId);
+    if (!groupMembers.has(move.citizenId)) {
+      return fail('Двигать можно только жителей показанной группы');
+    }
+    const pos = getPosition(state, move.citizenId);
+    if (!pos || pos.isDead) return fail('Этого жителя нельзя переместить');
+    if (!isInsideBoard(move.toX, move.toY)) return fail('Район вне карты');
+    if (!areNeighbors(pos.districtX, pos.districtY, move.toX, move.toY)) {
+      return fail('Каждого жителя можно сдвинуть только на один район');
+    }
+    if (isCrimeScene(state, move.toX, move.toY)) {
+      return fail('Нельзя перемещать жителей на место преступления');
+    }
+  }
+
+  const updated = state.positions.map(p => {
+    const move = cmd.moves.find(m => m.citizenId === p.citizenId);
+    return move ? { ...p, districtX: move.toX, districtY: move.toY } : { ...p };
+  });
+  if (!validateOccupancy(updated)) {
+    return fail(`В районе не может быть больше ${MAX_CITIZENS_PER_DISTRICT} жителей`);
+  }
+  for (const move of cmd.moves) {
+    const pos = getPosition(state, move.citizenId)!;
+    pos.districtX = move.toX;
+    pos.districtY = move.toY;
+    pos.subPosition = nextSubPosition(state.positions, move.toX, move.toY);
+  }
+
+  const stage = state.city.stage;
+  const who = stage === 'killer' ? 'Убийца' : 'Детектив';
+  log(
+    state,
+    stage === 'killer' ? 'killer' : 'detective',
+    `${who} передвинул(а) жителей группы «${state.city.group}» (${cmd.moves.length}).`
+  );
+
+  if (stage === 'killer') {
+    beginCityStage(state, 'detective');
+  } else {
+    finalizeRound(state);
+  }
   return { ok: true, state };
 }
 
@@ -520,6 +692,12 @@ function checkPermission(state: GameState, role: PlayerRole, cmd: GameCommand): 
       return state.phase === 'day' || state.phase === 'accusation'
         ? null
         : 'Сейчас нельзя предъявить обвинение';
+    case 'city:chooseGroup':
+    case 'city:moveGroup': {
+      if (state.phase !== 'city' || !state.city) return 'Сейчас не фаза Города';
+      const expectedRole: PlayerRole = state.city.stage === 'killer' ? 'killer' : 'detective';
+      return role === expectedRole ? null : 'Сейчас ходит другая сторона';
+    }
   }
 }
 
@@ -554,5 +732,9 @@ export function applyCommand(
       return applyEndTurn(state);
     case 'detective:accuse':
       return applyAccuse(state, cmd);
+    case 'city:chooseGroup':
+      return applyCityChooseGroup(state, cmd);
+    case 'city:moveGroup':
+      return applyCityMove(state, cmd);
   }
 }

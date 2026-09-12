@@ -35,6 +35,26 @@ function doNight(state: GameState): GameState {
   });
 }
 
+/** Проходит фазу Города без перемещений (для тестов, которым не важна эта фаза) */
+function passCityPhase(state: GameState): GameState {
+  while (state.phase === 'city' && state.city) {
+    const role = state.city.stage === 'killer' ? 'killer' : 'detective';
+    if (state.city.emptyGroupNotice) {
+      const emptyGroup = state.city.emptyGroupNotice;
+      const replacement = state.citizens.find(c => {
+        if (c.group === emptyGroup) return false;
+        const pos = state.positions.find(p => p.citizenId === c.id);
+        return pos !== undefined && !pos.isDead;
+      })?.group;
+      if (!replacement) break;
+      state = mustApply(state, role, { type: 'city:chooseGroup', group: replacement });
+      continue;
+    }
+    state = mustApply(state, role, { type: 'city:moveGroup', moves: [] });
+  }
+  return state;
+}
+
 function doRelocation(state: GameState): GameState {
   const crime = state.lastCrimeDistrict!;
   const stranded = aliveCitizensIn(state.positions, crime.x, crime.y);
@@ -62,6 +82,14 @@ describe('createGame', () => {
     expect(state.citizens.some(c => c.id === state.killer.citizenId)).toBe(true);
     expect(getMotive(state.killer.motiveId)).toBeDefined();
     expect(state.phase).toBe('setup');
+  });
+
+  it('минимум 5 разных соц. групп среди 20 жителей', () => {
+    for (let i = 0; i < 20; i++) {
+      const state = createGame('groups-' + i);
+      const groups = new Set(state.citizens.map(c => c.group));
+      expect(groups.size).toBeGreaterThanOrEqual(5);
+    }
   });
 
   it('в углах по 2 жителя, максимум 3 в районе', () => {
@@ -140,6 +168,62 @@ describe('ночь убийцы', () => {
       killId
     });
     expect(result.ok).toBe(false);
+  });
+
+  it('добровольный отказ от убийства разрешён один раз за игру', () => {
+    const state = mustApply(createGame('decline1'), 'detective', {
+      type: 'detective:placeCar',
+      x: 0,
+      y: 0
+    });
+    expect(getValidKillTargets(state).length).toBeGreaterThan(0);
+    const scareIds = state.positions
+      .filter(p => !p.isDead && !p.isScared)
+      .map(p => p.citizenId)
+      .slice(0, 2);
+
+    const result = applyCommand(state, 'killer', {
+      type: 'killer:night',
+      scareIds,
+      killId: null
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.declinedKillUsed).toBe(true);
+    expect(result.state.killsCount).toBe(0);
+    expect(result.state.phase).toBe('day');
+  });
+
+  it('второй отказ от убийства за игру — автоматическое поражение убийцы', () => {
+    let state = mustApply(createGame('decline2'), 'detective', {
+      type: 'detective:placeCar',
+      x: 0,
+      y: 0
+    });
+    const firstScares = state.positions
+      .filter(p => !p.isDead && !p.isScared)
+      .map(p => p.citizenId)
+      .slice(0, 2);
+    state = mustApply(state, 'killer', { type: 'killer:night', scareIds: firstScares, killId: null });
+    expect(state.declinedKillUsed).toBe(true);
+
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    state = passCityPhase(state);
+    expect(getValidKillTargets(state).length).toBeGreaterThan(0);
+    const secondScares = state.positions
+      .filter(p => !p.isDead && !p.isScared)
+      .map(p => p.citizenId)
+      .slice(0, 2);
+
+    const result = applyCommand(state, 'killer', {
+      type: 'killer:night',
+      scareIds: secondScares,
+      killId: null
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.winner).toBe('detective');
+    expect(result.state.phase).toBe('finished');
   });
 });
 
@@ -284,17 +368,47 @@ describe('здания', () => {
 
     // Следующий ход
     state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    state = passCityPhase(state);
     state = doNight(state);
     if (state.phase === 'relocation') state = doRelocation(state);
     if (state.phase !== 'day') return; // 5-е убийство в тесте маловероятно
+    if (state.positions.find(p => p.citizenId === someone.citizenId)!.isDead) return; // жетон снят вместе со смертью носителя
 
     const expected = canKillNow(state, someone.citizenId);
+    const abilitiesBefore = state.turn.abilitiesLeft;
     state = mustApply(state, 'detective', {
       type: 'detective:policeQuestion',
       citizenId: someone.citizenId
     });
     expect(state.policeAnswers[0].canKill).toBe(expected);
     expect(state.policeTokens).toHaveLength(0);
+    // Слежка бесплатна — не тратит основные действия
+    expect(state.turn.abilitiesLeft).toBe(abilitiesBefore);
+  });
+
+  it('пожарные не могут переместить жителя на место преступления', () => {
+    let state = newGameInDay();
+    const crime = state.lastCrimeDistrict!;
+    const fire = state.buildings.find(b => b.type === 'fire')!;
+    const neighborOfCrime = getNeighbors(crime.x, crime.y)[0];
+    state.detective = { x: fire.districtX, y: fire.districtY };
+
+    // Ставим живого жителя выбранной группы рядом с местом преступления
+    const mover = state.positions.find(p => !p.isDead && p.citizenId !== state.killer.citizenId)!;
+    mover.districtX = neighborOfCrime.x;
+    mover.districtY = neighborOfCrime.y;
+    const moverGroup = state.citizens.find(c => c.id === mover.citizenId)!.group;
+
+    const result = applyCommand(state, 'detective', {
+      type: 'detective:useBuilding',
+      buildingId: fire.id,
+      payload: {
+        kind: 'fire',
+        group: moverGroup,
+        moves: [{ citizenId: mover.citizenId, toX: crime.x, toY: crime.y }]
+      }
+    });
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -531,6 +645,7 @@ describe('конец игры', () => {
     for (let i = 0; i < 20 && state.phase !== 'accusation' && state.phase !== 'finished'; i++) {
       if (state.phase === 'night') state = doNight(state);
       else if (state.phase === 'relocation') state = doRelocation(state);
+      else if (state.phase === 'city') state = passCityPhase(state);
       else if (state.phase === 'day') {
         state = mustApply(state, 'detective', { type: 'detective:endTurn' });
       }
@@ -545,6 +660,289 @@ describe('конец игры', () => {
       });
       expect(wrongAccuse.ok && wrongAccuse.state.winner === 'killer').toBe(true);
     }
+  });
+});
+
+describe('фаза Города', () => {
+  it('после дня наступает фаза Города, а не сразу ночь', () => {
+    let state = newGameInDay();
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    expect(state.phase).toBe('city');
+    expect(state.city?.stage).toBe('killer');
+  });
+
+  it('население: запуганные жители в квартале Детектива успокаиваются перед фазой Города', () => {
+    let state = newGameInDay();
+    const scared = state.positions.find(p => p.isScared && !p.isDead)!;
+    state.detective = { x: scared.districtX, y: scared.districtY };
+
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    expect(state.positions.find(p => p.citizenId === scared.citizenId)!.isScared).toBe(false);
+  });
+
+  it('убийца двигает жителей показанной группы максимум на 1 район, затем ход переходит детективу', () => {
+    let state = newGameInDay();
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    expect(state.city!.stage).toBe('killer');
+
+    // Показанной группы может не остаться в живых — тогда убийца сначала выбирает замену
+    if (state.city!.emptyGroupNotice) {
+      const emptyGroup = state.city!.emptyGroupNotice;
+      const replacement = state.citizens.find(c => {
+        if (c.group === emptyGroup) return false;
+        return !state.positions.find(p => p.citizenId === c.id)!.isDead;
+      })!.group;
+      state = mustApply(state, 'killer', { type: 'city:chooseGroup', group: replacement });
+    }
+    expect(state.city!.emptyGroupNotice).toBeNull();
+
+    const group = state.city!.group;
+    const crime = state.lastCrimeDistrict;
+    const candidates = state.positions.filter(p => {
+      if (p.isDead) return false;
+      const c = state.citizens.find(ci => ci.id === p.citizenId)!;
+      return c.group === group;
+    });
+    // Берём жителя группы, у которого есть хотя бы один сосед, не являющийся местом преступления
+    let mover = candidates[0];
+    let neighbor = getNeighbors(mover.districtX, mover.districtY).find(
+      n => !crime || n.x !== crime.x || n.y !== crime.y
+    );
+    for (const cand of candidates) {
+      const free = getNeighbors(cand.districtX, cand.districtY).find(
+        n => !crime || n.x !== crime.x || n.y !== crime.y
+      );
+      if (free) {
+        mover = cand;
+        neighbor = free;
+        break;
+      }
+    }
+    if (!neighbor) return; // все соседи всех кандидатов — место преступления, сценарий неприменим
+    const far = { x: mover.districtX <= 1 ? 3 : 0, y: mover.districtY <= 1 ? 3 : 0 };
+
+    // Дальше одного квартала — нельзя
+    const badMove = applyCommand(state, 'killer', {
+      type: 'city:moveGroup',
+      moves: [{ citizenId: mover.citizenId, toX: far.x, toY: far.y }]
+    });
+    expect(badMove.ok).toBe(false);
+
+    // Детектив не может ходить, пока не завершил ход Убийца
+    const wrongTurn = applyCommand(state, 'detective', { type: 'city:moveGroup', moves: [] });
+    expect(wrongTurn.ok).toBe(false);
+
+    state = mustApply(state, 'killer', {
+      type: 'city:moveGroup',
+      moves: [{ citizenId: mover.citizenId, toX: neighbor.x, toY: neighbor.y }]
+    });
+    expect(state.positions.find(p => p.citizenId === mover.citizenId)).toMatchObject({
+      districtX: neighbor.x,
+      districtY: neighbor.y
+    });
+    expect(state.phase).toBe('city');
+    expect(state.city!.stage).toBe('detective');
+
+    // Детективу тоже может достаться пустая группа — сначала разрешаем её
+    if (state.city!.emptyGroupNotice) {
+      const emptyGroup = state.city!.emptyGroupNotice;
+      const replacement = state.citizens.find(c => {
+        if (c.group === emptyGroup) return false;
+        return !state.positions.find(p => p.citizenId === c.id)!.isDead;
+      })!.group;
+      state = mustApply(state, 'detective', { type: 'city:chooseGroup', group: replacement });
+    }
+
+    // Детектив может пройти без перемещений — раунд завершится ночью
+    state = mustApply(state, 'detective', { type: 'city:moveGroup', moves: [] });
+    expect(state.phase).toBe('night');
+    expect(state.city).toBeNull();
+  });
+
+  it('нельзя перемещать в фазе Города больше 3 жителей в квартал', () => {
+    let state = newGameInDay();
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    const group = state.city!.group;
+    const groupPositions = state.positions.filter(p => {
+      if (p.isDead) return false;
+      return state.citizens.find(c => c.id === p.citizenId)!.group === group;
+    });
+    if (groupPositions.length < 2) return; // мотив/группа слишком маленькие для этого сценария
+
+    // Забиваем соседний квартал до предела тремя ЧУЖИМИ жителями
+    const mover = groupPositions[0];
+    const neighbor = getNeighbors(mover.districtX, mover.districtY)[0];
+    const others = state.positions.filter(
+      p => !p.isDead && p.citizenId !== mover.citizenId
+    );
+    let filled = 0;
+    for (const p of others) {
+      if (filled >= 3) break;
+      if (p.districtX === neighbor.x && p.districtY === neighbor.y) {
+        filled++;
+        continue;
+      }
+      p.districtX = neighbor.x;
+      p.districtY = neighbor.y;
+      filled++;
+    }
+    if (filled < 3) return;
+
+    const result = applyCommand(state, 'killer', {
+      type: 'city:moveGroup',
+      moves: [{ citizenId: mover.citizenId, toX: neighbor.x, toY: neighbor.y }]
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('нельзя перемещать жителей в фазе Города на место преступления', () => {
+    let state = newGameInDay();
+    const crime = state.lastCrimeDistrict!;
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    const group = state.city!.group;
+    const neighborOfCrime = getNeighbors(crime.x, crime.y)[0];
+    const mover = state.positions.find(p => !p.isDead && p.citizenId !== state.killer.citizenId)!;
+    mover.districtX = neighborOfCrime.x;
+    mover.districtY = neighborOfCrime.y;
+    const moverCitizen = state.citizens.find(c => c.id === mover.citizenId)!;
+    moverCitizen.group = group;
+
+    const role = state.city!.stage === 'killer' ? 'killer' : 'detective';
+    const result = applyCommand(state, role, {
+      type: 'city:moveGroup',
+      moves: [{ citizenId: mover.citizenId, toX: crime.x, toY: crime.y }]
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('пустая группа: игрок обязан выбрать замену, пустой жетон удаляется из пула навсегда', () => {
+    let state = newGameInDay();
+    // Убиваем всех живых представителей одной группы, чтобы она стала «пустой»
+    const emptyGroup = state.citizens.find(c => c.id !== state.killer.citizenId)!.group;
+    for (const c of state.citizens) {
+      if (c.group === emptyGroup) {
+        state.positions.find(p => p.citizenId === c.id)!.isDead = true;
+      }
+    }
+    state.phase = 'city';
+    state.city = { stage: 'killer', group: emptyGroup, emptyGroupNotice: emptyGroup };
+
+    // Двигать пустую группу нельзя, пока не выбрана замена
+    const blocked = applyCommand(state, 'killer', { type: 'city:moveGroup', moves: [] });
+    expect(blocked.ok).toBe(false);
+
+    // Нельзя «заменить» на ту же пустую группу
+    const sameGroup = applyCommand(state, 'killer', {
+      type: 'city:chooseGroup',
+      group: emptyGroup
+    });
+    expect(sameGroup.ok).toBe(false);
+
+    const liveGroup = state.citizens.find(c => {
+      if (c.group === emptyGroup) return false;
+      const pos = state.positions.find(p => p.citizenId === c.id)!;
+      return !pos.isDead;
+    })!.group;
+
+    state = mustApply(state, 'killer', { type: 'city:chooseGroup', group: liveGroup });
+    expect(state.city!.group).toBe(liveGroup);
+    expect(state.city!.emptyGroupNotice).toBeNull();
+    expect(state.cityTokenPool).not.toContain(emptyGroup);
+
+    // Теперь ход можно продолжить как обычно
+    state = mustApply(state, 'killer', { type: 'city:moveGroup', moves: [] });
+    expect(state.city!.stage).toBe('detective');
+  });
+});
+
+describe('лимит раундов', () => {
+  it('после 6-го раунда без 5 убийств — автопобеда детектива', () => {
+    let state = newGameInDay();
+    state.turnNumber = 6;
+
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    expect(state.phase).toBe('city');
+
+    while (state.phase === 'city' && state.city) {
+      const role = state.city.stage === 'killer' ? 'killer' : 'detective';
+      if (state.city.emptyGroupNotice) {
+        const emptyGroup = state.city.emptyGroupNotice;
+        const replacement = state.citizens.find(c => {
+          if (c.group === emptyGroup) return false;
+          return !state.positions.find(p => p.citizenId === c.id)!.isDead;
+        })!.group;
+        state = mustApply(state, role, { type: 'city:chooseGroup', group: replacement });
+        continue;
+      }
+      state = mustApply(state, role, { type: 'city:moveGroup', moves: [] });
+    }
+
+    expect(state.phase).toBe('finished');
+    expect(state.winner).toBe('detective');
+    expect(state.turnNumber).toBe(6);
+  });
+
+  it('раунды 1-5 продолжаются как обычно (лимит не срабатывает раньше времени)', () => {
+    let state = newGameInDay();
+    state.turnNumber = 5;
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    expect(state.phase).toBe('city');
+    expect(state.winner).toBeNull();
+  });
+});
+
+describe('расселение: исключение для заполненных соседей', () => {
+  it('если все соседние районы заполнены, разрешено расселить в любой свободный квартал', () => {
+    let state = mustApply(createGame('reloc-exc'), 'detective', {
+      type: 'detective:placeCar',
+      x: 1,
+      y: 1
+    });
+    state = doNight(state);
+    if (state.phase !== 'relocation') return; // жертва была в квартале одна — сценарий неприменим
+
+    const crime = state.lastCrimeDistrict!;
+    const neighbors = getNeighbors(crime.x, crime.y);
+    const stranded = aliveCitizensIn(state.positions, crime.x, crime.y);
+    const strandedIds = new Set(stranded.map(p => p.citizenId));
+
+    // Пул «чужих» жителей, которых можно использовать, чтобы забить соседей до предела
+    const fillerPool = state.positions.filter(
+      p =>
+        !p.isDead &&
+        !strandedIds.has(p.citizenId) &&
+        !neighbors.some(n => n.x === p.districtX && n.y === p.districtY)
+    );
+
+    let fillerIndex = 0;
+    for (const n of neighbors) {
+      let already = aliveCitizensIn(state.positions, n.x, n.y).length;
+      while (already < 3) {
+        if (fillerIndex >= fillerPool.length) return; // недостаточно жителей для сценария — пропускаем
+        fillerPool[fillerIndex].districtX = n.x;
+        fillerPool[fillerIndex].districtY = n.y;
+        fillerIndex++;
+        already++;
+      }
+    }
+    for (const n of neighbors) {
+      expect(aliveCitizensIn(state.positions, n.x, n.y).length).toBe(3);
+    }
+
+    // Дальний квартал: не место преступления, не сосед, есть свободное место
+    const allDistricts: Array<{ x: number; y: number }> = [];
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) allDistricts.push({ x, y });
+    const far = allDistricts.find(
+      d =>
+        !(d.x === crime.x && d.y === crime.y) &&
+        !neighbors.some(n => n.x === d.x && n.y === d.y) &&
+        aliveCitizensIn(state.positions, d.x, d.y).length + stranded.length <= 3
+    );
+    if (!far) return; // не нашлось подходящего дальнего квартала — пропускаем сценарий
+
+    const moves = stranded.map(p => ({ citizenId: p.citizenId, toX: far.x, toY: far.y }));
+    const result = applyCommand(state, 'detective', { type: 'detective:relocate', moves });
+    expect(result.ok).toBe(true);
   });
 });
 

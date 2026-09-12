@@ -14,6 +14,7 @@ export function viewForDetective(state: GameState): DetectiveView {
     motiveOptions: state.motiveOptions,
     detective: state.detective,
     killsCount: state.killsCount,
+    declinedKillUsed: state.declinedKillUsed,
     victims: state.victims,
     lastCrimeDistrict: state.lastCrimeDistrict,
     policeTokens: state.policeTokens,
@@ -29,6 +30,7 @@ export function viewForDetective(state: GameState): DetectiveView {
       : null,
     answers: state.answers,
     policeAnswers: state.policeAnswers,
+    city: state.city,
     winner: state.winner,
     winReason: state.winReason,
     log: state.log
@@ -50,6 +52,7 @@ export function viewForKiller(state: GameState): KillerView {
     validKillTargets: state.phase === 'night' ? getValidKillTargets(state) : [],
     detective: state.detective,
     killsCount: state.killsCount,
+    declinedKillUsed: state.declinedKillUsed,
     victims: state.victims,
     lastCrimeDistrict: state.lastCrimeDistrict,
     policeTokens: state.policeTokens,
@@ -57,6 +60,7 @@ export function viewForKiller(state: GameState): KillerView {
     pendingQuestion: state.pendingQuestion,
     answers: state.answers,
     policeAnswers: state.policeAnswers,
+    city: state.city,
     winner: state.winner,
     winReason: state.winReason,
     log: state.log

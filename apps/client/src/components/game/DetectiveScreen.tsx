@@ -21,7 +21,7 @@ import { LogPanel } from './LogPanel';
 import { QuestionDialog } from './QuestionDialog';
 import { AccuseDialog } from './AccuseDialog';
 import { ALL_GROUPS_LABELED } from './groups';
-import { BUILDING_EMOJI, BUILDING_LABELS, districtName } from '@/lib/labels';
+import { BUILDING_EMOJI, BUILDING_LABELS, districtName, GROUP_LABELS } from '@/lib/labels';
 
 type Mode = 'idle' | 'move' | 'question' | 'police' | 'hospital' | 'diner' | 'fire';
 
@@ -45,7 +45,22 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
   const [fireMoves, setFireMoves] = useState<Record<number, { x: number; y: number }>>({});
   const [fireSelected, setFireSelected] = useState<number | null>(null);
 
+  // Фаза Города: перемещение своей группы
+  const [cityMoves, setCityMoves] = useState<Record<number, { x: number; y: number }>>({});
+  const [citySelected, setCitySelected] = useState<number | null>(null);
+
   const alivePositions = useMemo(() => view.positions.filter(p => !p.isDead), [view.positions]);
+  const isCityMyTurn = view.phase === 'city' && view.city?.stage === 'detective';
+  const livingGroupsExcept = (except: CitizenGroup) =>
+    ALL_GROUPS_LABELED.filter(
+      g =>
+        g.value !== except &&
+        view.citizens.some(c => {
+          if (c.group !== g.value) return false;
+          const pos = view.positions.find(p => p.citizenId === c.id);
+          return pos !== undefined && !pos.isDead;
+        })
+    );
   const car = view.detective;
   const currentBuilding = car
     ? view.buildings.find(b => b.districtX === car.x && b.districtY === car.y)
@@ -94,13 +109,24 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
       const pos = view.positions.find(p => p.citizenId === fireSelected)!;
       return getNeighbors(pos.districtX, pos.districtY);
     }
+    if (view.phase === 'city' && citySelected !== null) {
+      const pos = view.positions.find(p => p.citizenId === citySelected)!;
+      return getNeighbors(pos.districtX, pos.districtY);
+    }
     return [];
-  }, [view, mode, car, relocSelected, relocAssignments, alivePositions, fireSelected]);
+  }, [view, mode, car, relocSelected, relocAssignments, alivePositions, fireSelected, citySelected]);
 
   const selectableCitizenIds = useMemo((): number[] => {
     if (view.phase === 'relocation') {
       return strandedCitizens
         .filter(p => relocAssignments[p.citizenId] === undefined)
+        .map(p => p.citizenId);
+    }
+    if (view.phase === 'city') {
+      if (!isCityMyTurn || view.city?.emptyGroupNotice) return [];
+      const group = view.city!.group;
+      return alivePositions
+        .filter(p => view.citizens.find(c => c.id === p.citizenId)?.group === group)
         .map(p => p.citizenId);
     }
     if (view.phase !== 'day') return [];
@@ -133,7 +159,7 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
       default:
         return [];
     }
-  }, [view, mode, car, alivePositions, strandedCitizens, relocAssignments, currentBuilding, fireGroup]);
+  }, [view, mode, car, alivePositions, strandedCitizens, relocAssignments, currentBuilding, fireGroup, isCityMyTurn]);
 
   // ==== Обработчики доски ====
   const handleDistrictClick = async (x: number, y: number) => {
@@ -155,11 +181,19 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
       setFireMoves(prev => ({ ...prev, [fireSelected]: { x, y } }));
       setFireSelected(null);
     }
+    if (view.phase === 'city' && citySelected !== null) {
+      setCityMoves(prev => ({ ...prev, [citySelected]: { x, y } }));
+      setCitySelected(null);
+    }
   };
 
   const handleCitizenClick = async (citizenId: number) => {
     if (view.phase === 'relocation') {
       setRelocSelected(citizenId);
+      return;
+    }
+    if (view.phase === 'city') {
+      setCitySelected(citizenId);
       return;
     }
     switch (mode) {
@@ -246,6 +280,23 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
     if (ok) resetModes();
   };
 
+  const submitCityMove = async () => {
+    const moves = Object.entries(cityMoves).map(([citizenId, to]) => ({
+      citizenId: Number(citizenId),
+      toX: to.x,
+      toY: to.y
+    }));
+    const ok = await sendCommand({ type: 'city:moveGroup', moves });
+    if (ok) {
+      setCityMoves({});
+      setCitySelected(null);
+    }
+  };
+
+  const chooseCityGroup = (group: CitizenGroup) => {
+    void sendCommand({ type: 'city:chooseGroup', group });
+  };
+
   // Жетоны, по которым можно спросить в этот ход
   const askableTokens = view.policeTokens.filter(t => {
     const pos = view.positions.find(p => p.citizenId === t.citizenId);
@@ -275,9 +326,10 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
           selectableCitizenIds={selectableCitizenIds}
           selectedCitizenIds={[
             ...Object.keys(relocAssignments).map(Number),
-            ...Object.keys(fireMoves).map(Number)
+            ...Object.keys(fireMoves).map(Number),
+            ...Object.keys(cityMoves).map(Number)
           ]}
-          markedCitizenId={relocSelected ?? fireSelected}
+          markedCitizenId={relocSelected ?? fireSelected ?? citySelected}
           onCitizenClick={handleCitizenClick}
         />
       </div>
@@ -353,6 +405,45 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
                 >
                   Подтвердить расселение
                 </Button>
+              </div>
+            )}
+
+            {view.phase === 'city' && (
+              <div className="space-y-2 text-sm">
+                {!isCityMyTurn ? (
+                  <p className="animate-pulse">
+                    🏙️ Фаза Города: ходит Убийца (группа «{view.city ? GROUP_LABELS[view.city.group] : ''}»)...
+                  </p>
+                ) : view.city?.emptyGroupNotice ? (
+                  <div className="space-y-2">
+                    <p>
+                      Жетон «{GROUP_LABELS[view.city.emptyGroupNotice]}» — живых представителей не
+                      осталось. Выберите другую группу (этот жетон уйдёт из игры навсегда):
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {livingGroupsExcept(view.city.emptyGroupNotice).map(g => (
+                        <Button
+                          key={g.value}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => chooseCityGroup(g.value)}
+                        >
+                          {g.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p>
+                      🏙️ Жетон группы «{view.city ? GROUP_LABELS[view.city.group] : ''}». Кликните
+                      жителя группы, затем соседний район. Можно никого не двигать.
+                    </p>
+                    <Button className="w-full" onClick={submitCityMove}>
+                      Готово
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -447,12 +538,12 @@ export function DetectiveScreen({ view, sendCommand, actionError }: DetectiveScr
                           size="sm"
                           variant="outline"
                           className="w-full justify-start"
-                          disabled={!canAct || view.turn.abilitiesLeft <= 0}
+                          disabled={!canAct}
                           onClick={() =>
                             sendCommand({ type: 'detective:policeQuestion', citizenId: t.citizenId })
                           }
                         >
-                          Можешь ли ты убить жителя {citizen.job}?
+                          Можешь ли ты убить жителя {citizen.job}? (бесплатно)
                         </Button>
                       );
                     })}

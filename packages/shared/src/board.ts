@@ -6,6 +6,8 @@ export const BOARD_HEIGHT = 4;
 export const MAX_CITIZENS_PER_DISTRICT = 3;
 export const KILLS_TO_WIN = 5;
 export const SCARES_PER_NIGHT = 2;
+/** Партия длится максимум 6 раундов */
+export const MAX_ROUNDS = 6;
 
 export function isInsideBoard(x: number, y: number): boolean {
   return x >= 0 && x < BOARD_WIDTH && y >= 0 && y < BOARD_HEIGHT;

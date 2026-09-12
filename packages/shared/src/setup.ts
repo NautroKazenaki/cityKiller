@@ -33,20 +33,24 @@ export function getAllCitizens(): Citizen[] {
   }));
 }
 
-/** Выбирает 20 случайных жителей так, чтобы были представлены все 9 групп */
+/** Минимум разных соц. групп, представленных среди 20 выбранных жителей (остальные — случайно) */
+const MIN_GROUPS_REPRESENTED = 5;
+
+/** Выбирает 20 случайных жителей так, чтобы было хотя бы MIN_GROUPS_REPRESENTED разных групп */
 export function pickGameCitizens(): Citizen[] {
   const all = shuffle(getAllCitizens());
   const picked: Citizen[] = [];
   const seenGroups = new Set<string>();
 
-  // Сначала по одному из каждой группы
+  // Сначала гарантируем минимум MIN_GROUPS_REPRESENTED разных групп
   for (const citizen of all) {
+    if (seenGroups.size >= MIN_GROUPS_REPRESENTED) break;
     if (!seenGroups.has(citizen.group)) {
       seenGroups.add(citizen.group);
       picked.push(citizen);
     }
   }
-  // Добираем до 20 кем угодно
+  // Остальных добираем полностью случайно
   for (const citizen of all) {
     if (picked.length >= CITIZENS_IN_GAME) break;
     if (!picked.includes(citizen)) picked.push(citizen);
@@ -146,6 +150,7 @@ export function createGame(id: string): GameState {
     motiveOptions: [],
     detective: null,
     killsCount: 0,
+    declinedKillUsed: false,
     victims: [],
     lastCrimeDistrict: null,
     policeTokens: [],
@@ -154,6 +159,8 @@ export function createGame(id: string): GameState {
     pendingQuestion: null,
     answers: [],
     policeAnswers: [],
+    city: null,
+    cityTokenPool: [...ALL_GROUPS],
     winner: null,
     winReason: null,
     log: [
