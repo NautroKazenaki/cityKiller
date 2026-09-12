@@ -430,7 +430,6 @@ export function DetectiveScreen({
               ? 'Перемещения на этот ход закончились'
               : `Останется перемещений: ${view.turn.movesLeft - 1}`,
         icon: 'move',
-        hotkey: '1',
         tone: adjacent && view.turn.movesLeft > 0 && canAct ? 'primary' : 'disabled',
         onClick: () => sendCommand({ type: 'detective:move', x: selected.x, y: selected.y })
       });
@@ -441,7 +440,7 @@ export function DetectiveScreen({
     const wrongDistrict =
       view.turn.questionedDistrict &&
       (view.turn.questionedDistrict.x !== selected.x || view.turn.questionedDistrict.y !== selected.y);
-    askable.forEach((p, i) => {
+    askable.forEach(p => {
       const citizen = citizenById(p.citizenId);
       const available = carHere && canAct && view.turn.abilitiesLeft > 0 && !wrongDistrict;
       list.push({
@@ -455,7 +454,6 @@ export function DetectiveScreen({
               ? 'Возможности на этот ход закончились'
               : 'Возможность · 4 признака на выбор',
         icon: 'ask',
-        hotkey: String(i + 2),
         tone: available ? 'plain' : 'disabled',
         onClick: () => setQuestionTarget({ citizenId: p.citizenId, viaDiner: false })
       });
@@ -512,8 +510,33 @@ export function DetectiveScreen({
         tone: 'disabled'
       });
     }
+
+    // горячие клавиши раздаём по порядку только доступным действиям
+    let key = 1;
+    for (const a of list) {
+      if (a.tone !== 'disabled' && a.onClick && key <= 9) a.hotkey = String(key++);
+    }
     return list;
   }, [view, selected, selectedCitizens, carHere, canAct, strandedCitizens, relocAssignments, isCityMyTurn]);
+
+  // горячие клавиши: цифра запускает действие из списка, Esc снимает выбор цели
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (questionTarget || accuseOpen || view.phase === 'accusation') return;
+      if (e.key === 'Escape') {
+        resetModes();
+        return;
+      }
+      const action = actions.find(a => a.hotkey === e.key && a.tone !== 'disabled' && a.onClick);
+      if (action) {
+        e.preventDefault();
+        action.onClick!();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [actions, questionTarget, accuseOpen, view.phase]);
 
   // подсказка режима выбора цели
   const modeHint =
@@ -601,12 +624,12 @@ export function DetectiveScreen({
             selectedDistrict={selected}
             onDistrictClick={handleDistrictClick}
             selectableCitizenIds={selectableCitizenIds}
-            selectedCitizenIds={[
+            pendingCitizenIds={[
               ...Object.keys(relocAssignments).map(Number),
               ...Object.keys(fireMoves).map(Number),
-              ...Object.keys(cityMoves).map(Number)
+              ...Object.keys(cityMoves).map(Number),
+              ...[relocSelected, fireSelected, citySelected].filter((v): v is number => v !== null)
             ]}
-            markedCitizenId={relocSelected ?? fireSelected ?? citySelected}
             onCitizenClick={handleCitizenClick}
           />
         </div>

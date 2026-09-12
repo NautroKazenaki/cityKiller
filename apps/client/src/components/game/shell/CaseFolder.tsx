@@ -50,13 +50,16 @@ export function CaseFolder({
 }: CaseFolderProps) {
   return (
     <div
+      // смена района — кросс-фейд содержимого панели, 180 мс
+      key={district ? `${district.x},${district.y}` : 'none'}
       style={{
         background: 'oklch(0.225 0.013 55)',
         border: '1px solid oklch(0.3 0.015 55)',
         borderRadius: `0 0 ${RADIUS.panel} ${RADIUS.panel}`,
         boxShadow: SHADOW.panel,
         overflow: 'hidden',
-        flexShrink: 0
+        flexShrink: 0,
+        animation: 'ck-fade .18s ease-out'
       }}
     >
       {/* заголовок района */}

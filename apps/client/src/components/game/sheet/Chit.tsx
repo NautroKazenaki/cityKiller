@@ -2,6 +2,9 @@ import type { Citizen } from '@citykiller/shared';
 import { FONT, P, SHADOW } from '@/design/tokens';
 import { GROUP_CHIT, chitRing, monogram } from '@/design/city';
 
+/** Ночные метки убийцы: жертва, испуг, собственная личность */
+export type ChitMarker = 'victim' | 'scare' | 'self';
+
 interface ChitProps {
   citizen: Citizen;
   /** Один житель в районе — жетон крупнее (52 px), два-три — по 46 px */
@@ -9,10 +12,37 @@ interface ChitProps {
   scared: boolean;
   token: boolean;
   selectable: boolean;
-  selected: boolean;
-  marked: boolean;
+  /** Выбран для текущего перемещения */
+  pending?: boolean;
+  marker?: ChitMarker | null;
   onClick?: () => void;
 }
+
+const MARKERS: Record<
+  ChitMarker,
+  { inset: number; border: string; shadow?: string; label: string; labelFg: string; top?: boolean }
+> = {
+  victim: {
+    inset: -7,
+    border: `3px solid ${P.blood}`,
+    shadow: '0 0 0 3px oklch(0.58 0.16 27 / .25)',
+    label: 'ЖЕРТВА',
+    labelFg: 'oklch(0.8 0.14 30)'
+  },
+  scare: {
+    inset: -5,
+    border: '2.5px dashed oklch(0.7 0.12 300)',
+    label: 'ИСПУГ',
+    labelFg: 'oklch(0.78 0.1 300)'
+  },
+  self: {
+    inset: -8,
+    border: `2px solid ${P.gold}`,
+    label: 'ЭТО ВЫ',
+    labelFg: 'oklch(0.8 0.11 80)',
+    top: true
+  }
+};
 
 /**
  * Жетон жителя: кольцо — цвет жителя, ядро — бумага, инициал профессии — display,
@@ -24,12 +54,13 @@ export function Chit({
   scared,
   token,
   selectable,
-  selected,
-  marked,
+  pending = false,
+  marker = null,
   onClick
 }: ChitProps) {
   const size = big ? 52 : 46;
   const ring = chitRing(citizen.color);
+  const m = marker ? MARKERS[marker] : null;
 
   return (
     <div
@@ -56,9 +87,8 @@ export function Chit({
         justifyContent: 'center',
         cursor: selectable ? 'pointer' : 'default',
         flexShrink: 0,
-        opacity: selectable || selected || marked ? 1 : 0.92,
-        transition: 'transform .18s ease, opacity .18s ease',
-        transform: marked ? 'translateY(-3px)' : 'none'
+        transition: 'transform .18s ease',
+        transform: pending ? 'translateY(-3px)' : 'none'
       }}
     >
       <span
@@ -101,30 +131,49 @@ export function Chit({
         />
       )}
 
-      {/* Доступен для действия — тонкое золотое кольцо */}
-      {selectable && (
+      {/* Доступен для действия */}
+      {selectable && !m && (
         <span
           style={{
             position: 'absolute',
             inset: -4,
             borderRadius: 9999,
-            border: `2px solid ${selected || marked ? 'oklch(0.72 0.12 78)' : 'oklch(0.72 0.12 78 / .55)'}`,
+            border: `2px solid ${pending ? P.gold : 'oklch(0.72 0.12 78 / .55)'}`,
             pointerEvents: 'none'
           }}
         />
       )}
 
-      {/* Выбран для текущего действия */}
-      {(selected || marked) && (
-        <span
-          style={{
-            position: 'absolute',
-            inset: -8,
-            borderRadius: 9999,
-            border: `2px solid ${marked ? P.blood : P.gold}`,
-            pointerEvents: 'none'
-          }}
-        />
+      {/* Ночная метка убийцы */}
+      {m && (
+        <>
+          <span
+            style={{
+              position: 'absolute',
+              inset: m.inset,
+              borderRadius: 9999,
+              border: m.border,
+              boxShadow: m.shadow,
+              pointerEvents: 'none'
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: '50%',
+              [m.top ? 'top' : 'bottom']: m.top ? -22 : -24,
+              transform: 'translateX(-50%)',
+              fontFamily: FONT.mono,
+              fontSize: 8,
+              letterSpacing: '0.16em',
+              color: m.labelFg,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none'
+            }}
+          >
+            {m.label}
+          </span>
+        </>
       )}
 
       {/* Жетон полиции */}

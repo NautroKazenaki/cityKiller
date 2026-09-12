@@ -1,22 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CitizenGroup, GameCommand, KillerView } from '@citykiller/shared';
 import { MOTIVE_DESCRIPTORS, SCARES_PER_NIGHT, getNeighbors } from '@citykiller/shared';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
-import { GameSheet } from './sheet/GameSheet';
-import { CitizenCard } from './CitizenCard';
-import { LogPanel } from './LogPanel';
-import { ALL_GROUPS_LABELED } from './groups';
+import { FONT, LAYOUT, P } from '@/design/tokens';
 import { GROUP_LABELS, questionText } from '@/lib/labels';
-import { cn } from '@/lib/utils';
+import { GameSheet } from './sheet/GameSheet';
+import type { ChitMarker } from './sheet/Chit';
+import { TopBar } from './shell/TopBar';
+import { LeftColumn } from './shell/LeftColumn';
+import { KillerFolder, KillerButton, type NightStep } from './shell/KillerFolder';
+import { HintBox } from './shell/ActionRow';
+import { AnswerDialog } from './AnswerDialog';
 
 type NightMode = 'kill' | 'scare';
 
@@ -24,23 +17,49 @@ interface KillerScreenProps {
   view: KillerView;
   sendCommand: (command: GameCommand) => Promise<boolean>;
   actionError: string | null;
+  roomCode: string;
+  myName: string;
+  opponentName: string;
+  opponentConnected: boolean;
+  onMenu: () => void;
 }
 
-export function KillerScreen({ view, sendCommand, actionError }: KillerScreenProps) {
+export function KillerScreen({
+  view,
+  sendCommand,
+  actionError,
+  roomCode,
+  myName,
+  opponentName,
+  opponentConnected,
+  onMenu
+}: KillerScreenProps) {
   const [nightMode, setNightMode] = useState<NightMode>('kill');
   const [killTarget, setKillTarget] = useState<number | null>(null);
   const [scareTargets, setScareTargets] = useState<number[]>([]);
   const [declineChosen, setDeclineChosen] = useState(false);
 
-  // Фаза Города: перемещение своей группы
+  // фаза Города
   const [cityMoves, setCityMoves] = useState<Record<number, { x: number; y: number }>>({});
   const [citySelected, setCitySelected] = useState<number | null>(null);
 
   const killerCitizen = view.citizens.find(c => c.id === view.killer.citizenId)!;
   const killerPosition = view.positions.find(p => p.citizenId === view.killer.citizenId);
   const motive = MOTIVE_DESCRIPTORS.find(m => m.id === view.killer.motiveId);
+  const citizenById = (id: number) => view.citizens.find(c => c.id === id)!;
+  const posOf = (id: number) => view.positions.find(p => p.citizenId === id);
 
   const isNight = view.phase === 'night';
+  const isCityMyTurn = view.phase === 'city' && view.city?.stage === 'killer';
+
+  useEffect(() => {
+    setKillTarget(null);
+    setScareTargets([]);
+    setDeclineChosen(false);
+    setNightMode('kill');
+    setCityMoves({});
+    setCitySelected(null);
+  }, [view.phase, view.turnNumber]);
 
   const scareCandidates = useMemo(
     () =>
@@ -50,39 +69,38 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
     [view.positions, killTarget]
   );
   const requiredScares = Math.min(SCARES_PER_NIGHT, scareCandidates.length);
+  const canDecline = view.validKillTargets.length > 0 && !view.declinedKillUsed;
 
-  const isCityMyTurn = view.phase === 'city' && view.city?.stage === 'killer';
-
-  const selectableCitizenIds = useMemo(() => {
+  const selectableCitizenIds = useMemo((): number[] => {
     if (view.phase === 'city') {
       if (!isCityMyTurn || view.city?.emptyGroupNotice) return [];
       const group = view.city!.group;
       return view.positions
-        .filter(p => !p.isDead && view.citizens.find(c => c.id === p.citizenId)?.group === group)
+        .filter(p => !p.isDead && citizenById(p.citizenId).group === group)
         .map(p => p.citizenId);
     }
     if (!isNight) return [];
     return nightMode === 'kill' ? view.validKillTargets : scareCandidates;
-  }, [isNight, nightMode, view.validKillTargets, scareCandidates, view.phase, view.city, view.positions, view.citizens, isCityMyTurn]);
+  }, [view, isNight, nightMode, scareCandidates, isCityMyTurn]);
 
-  const cityHighlightDistricts = useMemo(() => {
-    if (view.phase !== 'city' || citySelected === null) return [];
-    const pos = view.positions.find(p => p.citizenId === citySelected);
-    return pos ? getNeighbors(pos.districtX, pos.districtY) : [];
+  const availableDistricts = useMemo(() => {
+    if (view.phase === 'city' && citySelected !== null) {
+      const pos = posOf(citySelected);
+      return pos ? getNeighbors(pos.districtX, pos.districtY) : [];
+    }
+    return [];
   }, [view.phase, view.positions, citySelected]);
 
-  const livingGroupsExcept = (except: CitizenGroup) =>
-    ALL_GROUPS_LABELED.filter(
-      g =>
-        g.value !== except &&
-        view.citizens.some(c => {
-          if (c.group !== g.value) return false;
-          const pos = view.positions.find(p => p.citizenId === c.id);
-          return pos !== undefined && !pos.isDead;
-        })
-    );
-
-  const canDecline = view.validKillTargets.length > 0 && !view.declinedKillUsed;
+  /** Ночные метки на жетонах: жертва, испуг, своя личность */
+  const markers = useMemo((): Record<number, ChitMarker> => {
+    const m: Record<number, ChitMarker> = {};
+    if (killerPosition && !killerPosition.isDead) m[view.killer.citizenId] = 'self';
+    if (isNight) {
+      scareTargets.forEach(id => (m[id] = 'scare'));
+      if (killTarget !== null) m[killTarget] = 'victim';
+    }
+    return m;
+  }, [view.killer.citizenId, killerPosition, isNight, scareTargets, killTarget]);
 
   const handleCitizenClick = (citizenId: number) => {
     if (view.phase === 'city') {
@@ -109,23 +127,6 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
     setCitySelected(null);
   };
 
-  const submitCityMove = async () => {
-    const moves = Object.entries(cityMoves).map(([citizenId, to]) => ({
-      citizenId: Number(citizenId),
-      toX: to.x,
-      toY: to.y
-    }));
-    const ok = await sendCommand({ type: 'city:moveGroup', moves });
-    if (ok) {
-      setCityMoves({});
-      setCitySelected(null);
-    }
-  };
-
-  const chooseCityGroup = (group: CitizenGroup) => {
-    void sendCommand({ type: 'city:chooseGroup', group });
-  };
-
   const canSubmitNight =
     scareTargets.length === requiredScares &&
     (killTarget !== null || view.validKillTargets.length === 0 || declineChosen);
@@ -144,253 +145,416 @@ export function KillerScreen({ view, sendCommand, actionError }: KillerScreenPro
     }
   };
 
-  const q = view.pendingQuestion;
-  const questionCitizen = q ? view.citizens.find(c => c.id === q.citizenId) : null;
-
-  const answer = (value: boolean) => {
-    if (!q) return;
-    void sendCommand({ type: 'killer:answer', questionId: q.id, answer: value });
+  const submitCityMove = async () => {
+    const moves = Object.entries(cityMoves).map(([citizenId, to]) => ({
+      citizenId: Number(citizenId),
+      toX: to.x,
+      toY: to.y
+    }));
+    const ok = await sendCommand({ type: 'city:moveGroup', moves });
+    if (ok) {
+      setCityMoves({});
+      setCitySelected(null);
+    }
   };
 
+  const chooseCityGroup = (group: CitizenGroup) => {
+    void sendCommand({ type: 'city:chooseGroup', group });
+  };
+
+  // ==== содержимое панели по фазе ====
+  const steps = useMemo((): NightStep[] => {
+    if (isNight) {
+      return [
+        {
+          n: '1',
+          text: `Запугать ${requiredScares} ${requiredScares === 1 ? 'жителя' : 'жителей'}`,
+          state: `${scareTargets.length}/${requiredScares}`,
+          done: scareTargets.length === requiredScares
+        },
+        {
+          n: '2',
+          text: declineChosen ? 'Отказ от убийства' : 'Выбрать жертву по мотиву',
+          state: declineChosen
+            ? 'ОТКАЗ'
+            : killTarget !== null
+              ? citizenById(killTarget).job.toUpperCase()
+              : view.validKillTargets.length === 0
+                ? 'НЕКОГО'
+                : 'НЕ ВЫБРАНА',
+          done: killTarget !== null || declineChosen || view.validKillTargets.length === 0
+        },
+        {
+          n: '3',
+          text: 'Подтвердить ночные дела',
+          state: canSubmitNight ? 'ГОТОВО' : 'ЖДЁТ',
+          done: false
+        }
+      ];
+    }
+    if (view.phase === 'city') {
+      return [
+        {
+          n: '1',
+          text: isCityMyTurn ? 'Двигать свою группу' : 'Ход детектива',
+          state: view.city ? GROUP_LABELS[view.city.group].toUpperCase() : '',
+          done: isCityMyTurn
+        },
+        {
+          n: '2',
+          text: 'Перемещено жителей',
+          state: String(Object.keys(cityMoves).length),
+          done: Object.keys(cityMoves).length > 0
+        }
+      ];
+    }
+    return [
+      {
+        n: '1',
+        text: 'Детектив ведёт расследование',
+        state: `ХОД ${view.turnNumber}`,
+        done: false
+      },
+      {
+        n: '2',
+        text: 'Отвечайте на допросы жителей',
+        state: view.pendingQuestion ? 'ВОПРОС' : 'ТИШИНА',
+        done: !!view.pendingQuestion
+      },
+      {
+        n: '3',
+        text: 'Убийств совершено',
+        state: `${view.killsCount}/5`,
+        done: view.killsCount > 0
+      }
+    ];
+  }, [
+    isNight,
+    requiredScares,
+    scareTargets,
+    killTarget,
+    declineChosen,
+    canSubmitNight,
+    view,
+    isCityMyTurn,
+    cityMoves
+  ]);
+
+  const phaseBadge =
+    view.phase === 'night'
+      ? `НОЧЬ ${view.turnNumber}`
+      : view.phase === 'day'
+        ? `ДЕНЬ ${view.turnNumber}`
+        : view.phase === 'city'
+          ? 'ГОРОД'
+          : view.phase === 'relocation'
+            ? 'МЕСТО ПРЕСТ.'
+            : view.phase === 'accusation'
+              ? 'ОБВИНЕНИЕ'
+              : 'РАССТАНОВКА';
+
+  const stepsTitle = isNight
+    ? `НОЧНЫЕ ДЕЛА · ${requiredScares} ИСПУГА, 1 ЖЕРТВА`
+    : view.phase === 'city'
+      ? 'ФАЗА ГОРОДА'
+      : 'ЧТО ПРОИСХОДИТ';
+
   return (
-    <div className="grid grid-cols-12 gap-4 w-full h-full min-h-0">
-      <div className="col-span-8 min-h-0 flex items-start justify-center overflow-auto">
-        <GameSheet
-          gameId={view.id}
-          citizens={view.citizens}
-          positions={view.positions}
-          buildings={view.buildings}
-          detective={view.detective}
-          policeTokens={view.policeTokens}
-          victims={view.victims}
-          availableDistricts={cityHighlightDistricts}
-          onDistrictClick={handleDistrictClick}
-          selectableCitizenIds={selectableCitizenIds}
-          selectedCitizenIds={view.phase === 'city' ? Object.keys(cityMoves).map(Number) : scareTargets}
-          markedCitizenId={view.phase === 'city' ? citySelected : killTarget}
-          onCitizenClick={handleCitizenClick}
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'linear-gradient(180deg, oklch(0.2 0.012 55), oklch(0.165 0.011 55))',
+        color: P.ink,
+        fontFamily: FONT.sans,
+        overflow: 'hidden'
+      }}
+    >
+      {/* ночью лампа над картой гаснет */}
+      {!isNight && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: -160,
+            width: 1100,
+            height: 620,
+            transform: 'translateX(-50%)',
+            background:
+              'radial-gradient(ellipse 50% 50% at 50% 50%, oklch(0.78 0.07 78 / .17), transparent 70%)',
+            pointerEvents: 'none',
+            animation: 'ck-lamp 6s ease-in-out infinite'
+          }}
         />
-      </div>
+      )}
 
-      <div className="col-span-4 flex flex-col gap-3 min-h-0 overflow-y-auto">
-        <Card className="noir-panel animate-fade-in-up">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center justify-between font-display uppercase tracking-wider">
-              <span>🔪 Убийца</span>
-              <Badge variant="destructive">Жертв: {view.killsCount}/5</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <CitizenCard
-              citizen={killerCitizen}
-              isKiller
-              isScared={killerPosition?.isScared}
-            />
-            <div className="text-sm space-y-1">
-              <p>
-                <span className="font-semibold text-gold">Ваш мотив:</span> {motive?.title} — {motive?.description}
-              </p>
-              <p>
-                <span className="font-semibold">Группа-помощник:</span>{' '}
-                {GROUP_LABELS[view.killer.allyGroup]} (за неё можно лгать)
-              </p>
-            </div>
+      <TopBar
+        roomCode={roomCode}
+        phase={view.phase}
+        turnNumber={view.turnNumber}
+        killsCount={view.killsCount}
+        onMenu={onMenu}
+      />
 
-            <div className="rounded-md border border-border/60 p-2 space-y-1">
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                Детектив выбирает из этих {view.motiveOptions.length} мотивов:
-              </p>
-              <div className="flex flex-col gap-1">
-                {MOTIVE_DESCRIPTORS.filter(m => view.motiveOptions.includes(m.id)).map(m => {
-                  const real = m.id === view.killer.motiveId;
-                  return (
-                    <div
-                      key={m.id}
-                      className={cn(
-                        'text-xs rounded px-2 py-1 border',
-                        real
-                          ? 'border-gold/70 bg-gold/10 text-gold font-semibold'
-                          : 'border-border/40 text-muted-foreground'
-                      )}
-                    >
-                      {real ? '● ' : '○ '}
-                      {m.title}
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Только один настоящий — остальные сбивают детектива с толку.
-              </p>
-            </div>
-            {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-          </CardContent>
-        </Card>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          gap: LAYOUT.gap,
+          padding: LAYOUT.pad,
+          position: 'relative',
+          zIndex: 10
+        }}
+      >
+        <LeftColumn
+          role="killer"
+          phase={view.phase}
+          turnNumber={view.turnNumber}
+          myName={myName}
+          opponentName={opponentName}
+          opponentConnected={opponentConnected}
+          movesLeft={null}
+          abilitiesLeft={null}
+          log={view.log}
+        />
 
-        {isNight ? (
-          <Card className="noir-panel border-purple-900/60">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-display uppercase tracking-wider animate-night-flicker">
-                🌙 Ночь {view.turnNumber}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={nightMode === 'kill' ? 'destructive' : 'outline'}
-                  onClick={() => setNightMode('kill')}
-                >
-                  Жертва {killTarget !== null ? '✓' : ''}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={nightMode === 'scare' ? 'default' : 'outline'}
-                  onClick={() => setNightMode('scare')}
-                >
-                  Испуг ({scareTargets.length}/{requiredScares})
-                </Button>
-              </div>
-              {nightMode === 'kill' && (
-                <p className="text-muted-foreground">
-                  {view.validKillTargets.length > 0
-                    ? 'Подсвечены жители, которых разрешают убить ваши правила и мотив.'
-                    : 'Этой ночью убить некого — правила не позволяют. Выберите только испуг.'}
-                </p>
-              )}
-              {nightMode === 'scare' && (
-                <p className="text-muted-foreground">
-                  Выберите {requiredScares} жителей, которых запугаете (они не смогут отвечать).
-                </p>
-              )}
-              {canDecline && (
-                <Button
-                  size="sm"
-                  variant={declineChosen ? 'default' : 'outline'}
-                  className="w-full"
-                  onClick={() => {
-                    setDeclineChosen(prev => !prev);
-                    setKillTarget(null);
-                  }}
-                >
-                  {declineChosen ? '✓ ' : ''}Отказаться от убийства этой ночью (доступно один раз за игру)
-                </Button>
-              )}
-              {view.declinedKillUsed && (
-                <p className="text-xs text-muted-foreground">
-                  Отказ от убийства уже использован в этой партии — второй отказ будет означать поражение.
-                </p>
-              )}
-              <Button className="w-full" disabled={!canSubmitNight} onClick={submitNight}>
-                Совершить ночные дела
-              </Button>
-            </CardContent>
-          </Card>
-        ) : view.phase === 'city' ? (
-          <Card className="noir-panel">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-display uppercase tracking-wider">
-                🏙️ Фаза Города
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {!isCityMyTurn ? (
-                <p className="animate-pulse">
-                  Ходит Детектив (группа «{view.city ? GROUP_LABELS[view.city.group] : ''}»)...
-                </p>
-              ) : view.city?.emptyGroupNotice ? (
-                <div className="space-y-2">
-                  <p>
-                    Жетон «{GROUP_LABELS[view.city.emptyGroupNotice]}» — живых представителей не
-                    осталось. Выберите другую группу (этот жетон уйдёт из игры навсегда):
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {livingGroupsExcept(view.city.emptyGroupNotice).map(g => (
-                      <Button
-                        key={g.value}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => chooseCityGroup(g.value)}
-                      >
-                        {g.label}
-                      </Button>
-                    ))}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-start' }}>
+          <GameSheet
+            gameId={view.id}
+            citizens={view.citizens}
+            positions={view.positions}
+            buildings={view.buildings}
+            detective={view.detective}
+            policeTokens={view.policeTokens}
+            victims={view.victims}
+            availableDistricts={availableDistricts}
+            onDistrictClick={handleDistrictClick}
+            selectableCitizenIds={selectableCitizenIds}
+            pendingCitizenIds={Object.keys(cityMoves).map(Number)}
+            markers={markers}
+            night={isNight}
+            onCitizenClick={handleCitizenClick}
+          />
+        </div>
+
+        <div
+          style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}
+        >
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}
+          >
+            <KillerFolder
+              killerCitizen={killerCitizen}
+              scared={!!killerPosition?.isScared}
+              motiveTitle={motive?.title ?? ''}
+              motiveDescription={motive?.description ?? ''}
+              allyGroup={view.killer.allyGroup}
+              phaseBadge={phaseBadge}
+              stepsTitle={stepsTitle}
+              steps={steps}
+            >
+              {/* ночь: переключатель цели/испуга и отказ от убийства */}
+              {isNight && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 7 }}>
+                    {(
+                      [
+                        { key: 'kill' as const, label: `ЖЕРТВА${killTarget !== null ? ' ✓' : ''}` },
+                        {
+                          key: 'scare' as const,
+                          label: `ИСПУГ ${scareTargets.length}/${requiredScares}`
+                        }
+                      ]
+                    ).map(t => {
+                      const on = nightMode === t.key;
+                      const blood = t.key === 'kill';
+                      return (
+                        <button
+                          key={t.key}
+                          onClick={() => setNightMode(t.key)}
+                          style={{
+                            flex: 1,
+                            height: 36,
+                            borderRadius: 4,
+                            border: `1px solid ${
+                              on
+                                ? blood
+                                  ? 'oklch(0.5 0.14 27)'
+                                  : 'oklch(0.5 0.12 300)'
+                                : 'oklch(0.33 0.015 55)'
+                            }`,
+                            background: on
+                              ? blood
+                                ? 'oklch(0.32 0.08 27)'
+                                : 'oklch(0.3 0.07 300)'
+                              : 'oklch(0.26 0.014 55)',
+                            color: on
+                              ? blood
+                                ? 'oklch(0.9 0.1 30)'
+                                : 'oklch(0.9 0.08 300)'
+                              : 'oklch(0.72 0.014 80)',
+                            fontFamily: FONT.mono,
+                            fontSize: 10,
+                            letterSpacing: '0.14em',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p>
-                    Жетон группы «{view.city ? GROUP_LABELS[view.city.group] : ''}». Кликните
-                    жителя группы, затем соседний район. Можно никого не двигать.
-                  </p>
-                  <Button className="w-full" onClick={submitCityMove}>
-                    Готово
-                  </Button>
+
+                  {canDecline && (
+                    <button
+                      onClick={() => {
+                        setDeclineChosen(prev => !prev);
+                        setKillTarget(null);
+                      }}
+                      style={{
+                        height: 34,
+                        borderRadius: 4,
+                        border: `1px solid ${
+                          declineChosen ? 'oklch(0.5 0.12 78)' : 'oklch(0.33 0.015 55)'
+                        }`,
+                        background: declineChosen ? 'oklch(0.3 0.05 78)' : 'transparent',
+                        color: declineChosen ? 'oklch(0.9 0.08 82)' : 'oklch(0.66 0.014 80)',
+                        fontFamily: FONT.mono,
+                        fontSize: 10,
+                        letterSpacing: '0.12em',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {declineChosen ? '✓ ' : ''}ОТКАЗАТЬСЯ ОТ УБИЙСТВА · ОДИН РАЗ ЗА ИГРУ
+                    </button>
+                  )}
+                  {view.declinedKillUsed && (
+                    <p
+                      style={{
+                        margin: 0,
+                        fontFamily: FONT.mono,
+                        fontSize: 10,
+                        color: 'oklch(0.62 0.014 80)'
+                      }}
+                    >
+                      Отказ уже использован — второй означает поражение.
+                    </p>
+                  )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="noir-panel">
-            <CardContent className="text-sm py-3">
-              {view.phase === 'setup' && 'Детектив выбирает, куда поставить машину...'}
-              {view.phase === 'day' && !q && '☀️ День. Детектив ведёт расследование...'}
-              {view.phase === 'relocation' && 'Детектив расселяет жителей с места преступления...'}
-              {view.phase === 'accusation' && '⚖️ Детектив предъявляет обвинение...'}
-            </CardContent>
-          </Card>
-        )}
 
-        <Card className="flex-1 min-h-32 noir-panel">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-display uppercase tracking-wider">
-              📻 Сводка
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-48">
-            <LogPanel log={view.log} />
-          </CardContent>
-        </Card>
+              {/* фаза Города: замена пустой группы */}
+              {isCityMyTurn && view.city?.emptyGroupNotice && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {(Object.keys(GROUP_LABELS) as CitizenGroup[])
+                    .filter(
+                      g =>
+                        g !== view.city!.emptyGroupNotice &&
+                        view.citizens.some(c => c.group === g && !posOf(c.id)?.isDead)
+                    )
+                    .map(g => (
+                      <button
+                        key={g}
+                        onClick={() => chooseCityGroup(g)}
+                        style={{
+                          height: 30,
+                          padding: '0 10px',
+                          borderRadius: 3,
+                          border: '1px solid oklch(0.36 0.015 55)',
+                          background: 'oklch(0.26 0.014 55)',
+                          color: 'oklch(0.9 0.012 80)',
+                          fontFamily: FONT.mono,
+                          fontSize: 10,
+                          letterSpacing: '0.1em',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {GROUP_LABELS[g].toUpperCase()}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </KillerFolder>
+
+            {isNight && (
+              <HintBox>
+                {nightMode === 'kill'
+                  ? view.validKillTargets.length > 0
+                    ? 'Подсвечены жители, которых разрешают убить ваши правила и мотив. Расстояние до них не имеет значения.'
+                    : 'Этой ночью убить некого — правила не позволяют. Выберите только испуг.'
+                  : 'Запуганные жители не отвечают на вопросы детектива до конца следующего дня.'}
+              </HintBox>
+            )}
+
+            {view.phase === 'city' && isCityMyTurn && !view.city?.emptyGroupNotice && (
+              <HintBox>
+                Кликните жителя своей группы, затем соседний район. Можно не двигать никого — жетон
+                всё равно вернётся в стопку.
+              </HintBox>
+            )}
+
+            {actionError && (
+              <div
+                style={{
+                  flexShrink: 0,
+                  padding: '10px 13px',
+                  borderRadius: 4,
+                  border: '1px solid oklch(0.45 0.1 27)',
+                  background: 'oklch(0.26 0.05 27 / .5)',
+                  color: 'oklch(0.85 0.1 30)',
+                  fontSize: 12.5
+                }}
+              >
+                {actionError}
+              </div>
+            )}
+          </div>
+
+          <div style={{ flexShrink: 0 }}>
+            {isNight ? (
+              <KillerButton
+                label="Совершить ночные дела"
+                onClick={submitNight}
+                disabled={!canSubmitNight}
+              />
+            ) : view.phase === 'city' ? (
+              <KillerButton
+                label="Готово"
+                onClick={submitCityMove}
+                disabled={!isCityMyTurn || !!view.city?.emptyGroupNotice}
+              />
+            ) : (
+              <KillerButton label="Ход детектива" onClick={() => {}} disabled />
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Ответ на вопрос детектива */}
-      <Dialog open={q !== null}>
-        <DialogContent showCloseButton={false} className="noir-panel">
-          <DialogHeader>
-            <DialogTitle className="font-display uppercase tracking-wider">
-              🔦 Детектив допрашивает: {questionCitizen?.job}
-            </DialogTitle>
-            <DialogDescription className="text-lg text-foreground/90">
-              «{q ? questionText(q.attribute, q.value) : ''}»
-            </DialogDescription>
-          </DialogHeader>
-          {q?.mustBeHonest ? (
-            <div className="space-y-3">
-              <p className="text-sm">
-                Этот житель не ваш персонаж и не из группы-помощника — отвечать нужно честно.
-              </p>
-              <Button className="w-full" onClick={() => answer(q.truth)}>
-                Ответить честно: «{q.truth ? 'Да' : 'Нет'}»
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-purple-300">
-                Это {q?.citizenId === view.killer.citizenId ? 'ВЫ' : 'ваш помощник'} — можно
-                солгать! Правдивый ответ: «{q?.truth ? 'Да' : 'Нет'}».
-              </p>
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => answer(true)}>
-                  Ответить «Да»
-                </Button>
-                <Button className="flex-1" variant="outline" onClick={() => answer(false)}>
-                  Ответить «Нет»
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <AnswerDialog
+        question={view.pendingQuestion}
+        citizen={view.pendingQuestion ? citizenById(view.pendingQuestion.citizenId) : null}
+        isSelf={view.pendingQuestion?.citizenId === view.killer.citizenId}
+        text={view.pendingQuestion ? questionText(view.pendingQuestion.attribute, view.pendingQuestion.value) : ''}
+        onAnswer={answer => {
+          if (!view.pendingQuestion) return;
+          void sendCommand({
+            type: 'killer:answer',
+            questionId: view.pendingQuestion.id,
+            answer
+          });
+        }}
+      />
     </div>
   );
 }

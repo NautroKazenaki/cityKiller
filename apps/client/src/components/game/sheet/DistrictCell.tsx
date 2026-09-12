@@ -2,7 +2,7 @@ import type { Building, Citizen, CitizenPosition, Victim } from '@citykiller/sha
 import { FONT, P } from '@/design/tokens';
 import { BUILDING_SHORT, buildingPath, districtTitle } from '@/design/city';
 import { BUILDING_LABELS } from '@/lib/labels';
-import { Chit } from './Chit';
+import { Chit, type ChitMarker } from './Chit';
 
 export interface DistrictCellProps {
   x: number;
@@ -16,8 +16,11 @@ export interface DistrictCellProps {
   available: boolean;
   policeTokenIds: number[];
   selectableCitizenIds: number[];
-  selectedCitizenIds: number[];
-  markedCitizenId: number | null;
+  /** Жители, выбранные для текущего перемещения */
+  pendingCitizenIds: number[];
+  /** Ночные метки убийцы: жертва, испуг, своя личность */
+  markers: Record<number, ChitMarker>;
+  night: boolean;
   onDistrictClick?: () => void;
   onCitizenClick?: (citizenId: number) => void;
 }
@@ -38,17 +41,29 @@ export function DistrictCell({
   available,
   policeTokenIds,
   selectableCitizenIds,
-  selectedCitizenIds,
-  markedCitizenId,
+  pendingCitizenIds,
+  markers,
+  night,
   onDistrictClick,
   onCitizenClick
 }: DistrictCellProps) {
   const clickable = available || selected || !!onDistrictClick;
   const here = positions.filter(p => p.districtX === x && p.districtY === y && !p.isDead);
 
-  const plateBg = selected ? 'oklch(0.5 0.13 78)' : 'oklch(0.93 0.02 85 / .86)';
-  const plateBd = selected ? 'oklch(0.4 0.11 72)' : 'oklch(0.4 0.03 60 / .45)';
-  const plateFg = selected ? 'oklch(0.97 0.02 85)' : P.paperInk;
+  // ночью акцент меняется с золотого на кровавый, табличка уходит в холодный полумрак
+  const accentWash = night ? 'oklch(0.58 0.16 27 / .2)' : 'oklch(0.72 0.12 78 / .16)';
+  const accentHint = night ? 'oklch(0.58 0.16 27 / .1)' : 'oklch(0.72 0.12 78 / .07)';
+  const accentFrame = night ? 'oklch(0.5 0.16 27)' : 'oklch(0.5 0.13 78)';
+
+  const plateBg = selected ? accentFrame : night ? 'oklch(0.62 0.05 285 / .5)' : 'oklch(0.93 0.02 85 / .86)';
+  const plateBd = selected
+    ? night
+      ? 'oklch(0.42 0.13 27)'
+      : 'oklch(0.4 0.11 72)'
+    : night
+      ? 'oklch(0.72 0.05 285 / .5)'
+      : 'oklch(0.4 0.03 60 / .45)';
+  const plateFg = selected ? 'oklch(0.97 0.02 85)' : night ? 'oklch(0.94 0.02 285)' : P.paperInk;
 
   return (
     <div
@@ -58,12 +73,8 @@ export function DistrictCell({
         padding: 7,
         boxSizing: 'border-box',
         cursor: available || selected ? 'pointer' : 'default',
-        background: selected
-          ? 'oklch(0.72 0.12 78 / .16)'
-          : available
-            ? 'oklch(0.72 0.12 78 / .07)'
-            : 'transparent',
-        boxShadow: selected ? 'inset 0 0 0 3px oklch(0.5 0.13 78)' : 'none',
+        background: selected ? accentWash : available ? accentHint : 'transparent',
+        boxShadow: selected ? `inset 0 0 0 3px ${accentFrame}` : 'none',
         transition: 'background .18s ease'
       }}
     >
@@ -148,7 +159,7 @@ export function DistrictCell({
             animation: 'ck-avail 1.9s ease-in-out infinite'
           }}
         >
-          <g fill="none" stroke="oklch(0.46 0.14 72)" strokeWidth={4}>
+          <g fill="none" stroke={night ? 'oklch(0.55 0.16 27)' : 'oklch(0.46 0.14 72)'} strokeWidth={4}>
             <path d="M0 14 L0 0 L14 0" />
             <path d="M86 0 L100 0 L100 14" />
             <path d="M100 86 L100 100 L86 100" />
@@ -182,8 +193,8 @@ export function DistrictCell({
               scared={pos.isScared}
               token={policeTokenIds.includes(pos.citizenId)}
               selectable={selectableCitizenIds.includes(pos.citizenId)}
-              selected={selectedCitizenIds.includes(pos.citizenId)}
-              marked={markedCitizenId === pos.citizenId}
+              pending={pendingCitizenIds.includes(pos.citizenId)}
+              marker={markers[pos.citizenId] ?? null}
               onClick={() => onCitizenClick?.(pos.citizenId)}
             />
           );
@@ -212,7 +223,9 @@ export function DistrictCell({
             alignItems: 'center',
             justifyContent: 'center',
             gap: 3,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            // убийство: карточка проявляется на месте жетона, 600 мс
+            animation: 'ck-crime .6s ease-out'
           }}
         >
           <div

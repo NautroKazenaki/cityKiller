@@ -5,6 +5,7 @@ import { FONT, LAYOUT, P, SHADOW } from '@/design/tokens';
 import { generateCityIn, seedFromId } from '@/design/cityArt';
 import { HEIGHT_SHORT } from '@/lib/labels';
 import { DistrictCell } from './DistrictCell';
+import type { ChitMarker } from './Chit';
 
 export interface GameSheetProps {
   gameId: string;
@@ -18,8 +19,12 @@ export interface GameSheetProps {
   selectedDistrict?: { x: number; y: number } | null;
   onDistrictClick?: (x: number, y: number) => void;
   selectableCitizenIds?: number[];
-  selectedCitizenIds?: number[];
-  markedCitizenId?: number | null;
+  /** Жители, выбранные для текущего перемещения */
+  pendingCitizenIds?: number[];
+  /** Ночные метки убийцы */
+  markers?: Record<number, ChitMarker>;
+  /** Ночь: холодный слой над картой, акцент уходит в кровавый */
+  night?: boolean;
   onCitizenClick?: (citizenId: number) => void;
 }
 
@@ -73,8 +78,9 @@ export function GameSheet({
   selectedDistrict = null,
   onDistrictClick,
   selectableCitizenIds = [],
-  selectedCitizenIds = [],
-  markedCitizenId = null,
+  pendingCitizenIds = [],
+  markers = {},
+  night = false,
   onCitizenClick
 }: GameSheetProps) {
   const art = useMemo(() => generateCityIn(1000, 1000, seedFromId(gameId), 17), [gameId]);
@@ -154,6 +160,20 @@ export function GameSheet({
           ))}
         </svg>
 
+        {/* ночной слой: холодный полумрак над бумагой */}
+        {night && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 2,
+              pointerEvents: 'none',
+              background:
+                'linear-gradient(180deg, oklch(0.3 0.06 285 / .82), oklch(0.24 0.05 285 / .88))'
+            }}
+          />
+        )}
+
         {/* слой 2: высечка районов */}
         <svg
           viewBox="0 0 690 690"
@@ -167,7 +187,12 @@ export function GameSheet({
             pointerEvents: 'none'
           }}
         >
-          <g stroke="oklch(0.3 0.02 60)" strokeWidth={1.5} strokeDasharray="9 6" opacity={0.72}>
+          <g
+            stroke={night ? 'oklch(0.62 0.05 285)' : 'oklch(0.3 0.02 60)'}
+            strokeWidth={1.5}
+            strokeDasharray="9 6"
+            opacity={night ? 0.55 : 0.72}
+          >
             <line x1="172.5" y1="0" x2="172.5" y2="690" />
             <line x1="345" y1="0" x2="345" y2="690" />
             <line x1="517.5" y1="0" x2="517.5" y2="690" />
@@ -175,9 +200,31 @@ export function GameSheet({
             <line x1="0" y1="345" x2="690" y2="345" />
             <line x1="0" y1="517.5" x2="690" y2="517.5" />
           </g>
-          <line x1="345" y1="0" x2="345" y2="690" stroke="oklch(0.28 0.02 60)" strokeWidth={3} />
-          <line x1="0" y1="345" x2="690" y2="345" stroke="oklch(0.28 0.02 60)" strokeWidth={3} />
-          <rect x="3" y="3" width="684" height="684" fill="none" stroke="oklch(0.24 0.02 60)" strokeWidth={6} />
+          <line
+            x1="345"
+            y1="0"
+            x2="345"
+            y2="690"
+            stroke={night ? 'oklch(0.58 0.05 285)' : 'oklch(0.28 0.02 60)'}
+            strokeWidth={3}
+          />
+          <line
+            x1="0"
+            y1="345"
+            x2="690"
+            y2="345"
+            stroke={night ? 'oklch(0.58 0.05 285)' : 'oklch(0.28 0.02 60)'}
+            strokeWidth={3}
+          />
+          <rect
+            x="3"
+            y="3"
+            width="684"
+            height="684"
+            fill="none"
+            stroke={night ? 'oklch(0.52 0.05 285)' : 'oklch(0.24 0.02 60)'}
+            strokeWidth={6}
+          />
         </svg>
 
         {/* слой 3: интерактив */}
@@ -205,8 +252,9 @@ export function GameSheet({
               available={availableDistricts.some(d => d.x === x && d.y === y)}
               policeTokenIds={tokenIds}
               selectableCitizenIds={selectableCitizenIds}
-              selectedCitizenIds={selectedCitizenIds}
-              markedCitizenId={markedCitizenId}
+              pendingCitizenIds={pendingCitizenIds}
+              markers={markers}
+              night={night}
               onDistrictClick={onDistrictClick ? () => onDistrictClick(x, y) : undefined}
               onCitizenClick={onCitizenClick}
             />

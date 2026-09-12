@@ -1,192 +1,122 @@
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useGameRoom } from '@/hooks/useGameRoom';
 import { DetectiveScreen } from '@/components/game/DetectiveScreen';
 import { KillerScreen } from '@/components/game/KillerScreen';
+import { CenterCard, NoirButton } from '@/components/game/shell/CenterCard';
+import { Lobby } from '@/components/game/shell/Lobby';
+import { FinalDialog, type FinalRow } from '@/components/game/FinalDialog';
 
 export function GamePage() {
   const { roomCode } = useParams({ from: '/game/$roomCode' });
   const room = useGameRoom(roomCode);
   const navigate = useNavigate();
+  const toMenu = () => navigate({ to: '/' });
 
   if (!room.session) {
     return (
-      <CenterMessage title="Нет доступа к комнате">
-        <p className="text-muted-foreground">
-          Данные сессии не найдены. Вернитесь в меню и присоединитесь по коду комнаты.
+      <CenterCard title="Нет доступа к делу">
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'oklch(0.72 0.014 80)' }}>
+          Данные сессии не найдены. Вернитесь в меню и войдите по коду комнаты.
         </p>
-        <Link to="/">
-          <Button className="mt-4">В меню</Button>
-        </Link>
-      </CenterMessage>
+        <NoirButton label="В меню" onClick={toMenu} />
+      </CenterCard>
     );
   }
 
   if (room.connectionError) {
     return (
-      <CenterMessage title="Ошибка подключения">
-        <p className="text-destructive">{room.connectionError}</p>
-        <Link to="/">
-          <Button className="mt-4">В меню</Button>
-        </Link>
-      </CenterMessage>
-    );
-  }
-
-  // Лобби: ждём второго игрока
-  if (!room.view) {
-    const opponentRole = room.session.role === 'detective' ? 'killer' : 'detective';
-    const opponent = room.roomInfo?.players[opponentRole];
-    return (
-      <CenterMessage title={`Дело № ${room.session.roomCode}`}>
-        <div className="space-y-4">
-          <p>
-            Вы — {room.session.role === 'detective' ? '🕵️ детектив' : '🔪 убийца'} (
-            {room.session.username})
-          </p>
-          <div className="text-5xl font-mono font-bold tracking-[0.3em] border border-primary/40 rounded-lg py-5 select-all text-gold">
-            {room.session.roomCode}
-          </div>
-          <p className="text-muted-foreground text-sm">
-            Отправьте этот код второму игроку. Игра начнётся автоматически.
-          </p>
-          <p className="animate-night-flicker text-muted-foreground">
-            {opponent ? `${opponent.username} подключается...` : 'Ожидание второго игрока...'}
-          </p>
-        </div>
-      </CenterMessage>
+      <CenterCard title="Ошибка подключения">
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: 'oklch(0.85 0.1 30)' }}>
+          {room.connectionError}
+        </p>
+        <NoirButton label="В меню" onClick={toMenu} />
+      </CenterCard>
     );
   }
 
   const opponentRole = room.session.role === 'detective' ? 'killer' : 'detective';
   const opponentInfo = room.roomInfo?.players[opponentRole];
-  const opponentOffline = opponentInfo !== null && opponentInfo !== undefined && !opponentInfo.connected;
 
-  const phase = room.view.phase;
-
-  // Детектив уже переведён на новый интерфейс «Дело на столе» — со своей верхней лентой
-  if (room.view.role === 'detective') {
+  // Лобби: ждём второго игрока
+  if (!room.view) {
     return (
-      <div className="w-screen h-screen overflow-hidden">
-        <DetectiveScreen
-          view={room.view}
-          sendCommand={room.sendCommand}
-          actionError={room.actionError}
-          roomCode={room.session.roomCode}
-          myName={room.session.username}
-          opponentName={opponentInfo?.username ?? 'Убийца'}
-          opponentConnected={opponentInfo?.connected ?? false}
-          onMenu={() => navigate({ to: '/' })}
-        />
-        <FinalDialog
-          open={room.view.phase === 'finished'}
-          win={room.view.winner === room.session.role}
-          reason={room.view.winReason}
-        />
-      </div>
+      <Lobby
+        roomCode={room.session.roomCode}
+        myRole={room.session.role}
+        myName={room.session.username}
+        opponentRole={opponentRole}
+        opponentName={opponentInfo?.username ?? null}
+      />
     );
   }
 
-  return (
-    <div className="w-screen h-screen bg-noir flex flex-col overflow-hidden">
-      <header className="h-12 border-b border-border/60 px-4 flex items-center justify-between shrink-0 backdrop-blur-sm">
-        <div className="flex items-center gap-3">
-          <h1 className="font-display font-bold uppercase tracking-widest text-gold">
-            City Killer
-          </h1>
-          <Badge variant="outline" className="font-mono">
-            {room.session.roomCode}
-          </Badge>
-          <Badge
-            variant={phase === 'night' ? 'default' : 'secondary'}
-            className={phase === 'night' ? 'animate-night-flicker' : ''}
-          >
-            {phase === 'setup' && '🚔 Расстановка'}
-            {phase === 'night' && `🌙 Ночь ${room.view.turnNumber}`}
-            {phase === 'relocation' && '🚧 Место преступления'}
-            {phase === 'day' && `☀️ День ${room.view.turnNumber}`}
-            {phase === 'accusation' && '⚖️ Обвинение'}
-            {phase === 'finished' && '🏁 Финал'}
-          </Badge>
-          {opponentOffline && (
-            <Badge variant="destructive" className="animate-pulse">
-              Соперник отключился
-            </Badge>
-          )}
-        </div>
-        <Link to="/">
-          <Button variant="ghost" size="sm">
-            В меню
-          </Button>
-        </Link>
-      </header>
+  const common = {
+    sendCommand: room.sendCommand,
+    actionError: room.actionError,
+    roomCode: room.session.roomCode,
+    myName: room.session.username,
+    opponentConnected: opponentInfo?.connected ?? false,
+    onMenu: toMenu
+  };
 
-      <main className="flex-1 min-h-0 p-3">
+  // Итоги для финального документа
+  const view = room.view;
+  const questions = view.answers.length;
+  const tokenAnswers = view.policeAnswers.length;
+  const lastVictim = view.victims[view.victims.length - 1];
+  const finalRows: FinalRow[] = [
+    {
+      label: 'ЖЕРТВ',
+      value: lastVictim
+        ? `${view.killsCount} из 5 · последняя на ходу ${lastVictim.turnNumber}`
+        : `${view.killsCount} из 5`,
+      tone: 'ink'
+    },
+    {
+      label: 'ВОПРОСОВ ЗАДАНО',
+      value:
+        questions === 0
+          ? 'ни одного'
+          : `${questions} · из них ${tokenAnswers} по жетонам полиции`,
+      tone: 'ink'
+    },
+    {
+      label: 'ХОДОВ СЫГРАНО',
+      value: String(view.turnNumber),
+      tone: 'ink'
+    },
+    {
+      label: 'ИСХОД',
+      value: view.winner === 'detective' ? 'Победа детектива' : 'Победа убийцы',
+      strong: true,
+      tone: view.winner === room.session.role ? 'good' : 'bad'
+    }
+  ];
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      {room.view.role === 'detective' ? (
+        <DetectiveScreen
+          view={room.view}
+          {...common}
+          opponentName={opponentInfo?.username ?? 'Убийца'}
+        />
+      ) : (
         <KillerScreen
           view={room.view}
-          sendCommand={room.sendCommand}
-          actionError={room.actionError}
+          {...common}
+          opponentName={opponentInfo?.username ?? 'Детектив'}
         />
-      </main>
-
-      {/* Конец игры */}
-      <Dialog open={room.view.phase === 'finished'}>
-        <DialogContent showCloseButton={false} className="noir-panel text-center">
-          <DialogHeader>
-            <DialogTitle className="font-display text-4xl uppercase tracking-widest text-center text-gold">
-              {room.view.winner === room.session.role ? 'Победа' : 'Поражение'}
-            </DialogTitle>
-            <DialogDescription className="text-center text-base pt-2">
-              {room.view.winner === room.session.role ? '🏆' : '💀'} {room.view.winReason}
-            </DialogDescription>
-          </DialogHeader>
-          <Link to="/" className="w-full">
-            <Button className="w-full font-display uppercase tracking-widest">
-              Вернуться в меню
-            </Button>
-          </Link>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function FinalDialog({ open, win, reason }: { open: boolean; win: boolean; reason: string | null }) {
-  return (
-    <Dialog open={open}>
-      <DialogContent showCloseButton={false} className="noir-panel text-center">
-        <DialogHeader>
-          <DialogTitle className="font-display text-4xl uppercase tracking-widest text-center text-gold">
-            {win ? 'Победа' : 'Поражение'}
-          </DialogTitle>
-          <DialogDescription className="text-center text-base pt-2">{reason}</DialogDescription>
-        </DialogHeader>
-        <Link to="/" className="w-full">
-          <Button className="w-full font-display uppercase tracking-widest">Вернуться в меню</Button>
-        </Link>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CenterMessage({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="w-screen h-screen flex items-center justify-center bg-noir vignette p-4">
-      <Card className="max-w-md w-full text-center noir-panel animate-fade-in-up relative z-10">
-        <CardHeader>
-          <CardTitle className="font-display uppercase tracking-widest text-xl">{title}</CardTitle>
-        </CardHeader>
-        <CardContent>{children}</CardContent>
-      </Card>
+      )}
+      <FinalDialog
+        open={room.view.phase === 'finished'}
+        solved={room.view.winner === 'detective'}
+        reason={room.view.winReason}
+        roomCode={room.session.roomCode}
+        turnNumber={room.view.turnNumber}
+        rows={finalRows}
+        onMenu={toMenu}
+      />
     </div>
   );
 }
