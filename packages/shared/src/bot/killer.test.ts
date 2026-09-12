@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { applyCommand, canKillNow, getValidKillTargets } from '../engine';
 import { createGame } from '../setup';
 import type { CitizenGroup, GameState } from '../types';
-import { chooseReplacementGroup, decideAnswer, decideCityMove, decideNight } from './killer';
+import {
+  chooseDecoy,
+  chooseReplacementGroup,
+  chooseVictim,
+  decideAnswer,
+  decideCityMove,
+  decideNight
+} from './killer';
 
 function gameAtNight(id: string): GameState {
   const result = applyCommand(createGame(id), 'detective', {
@@ -75,6 +82,72 @@ describe('бот-убийца: ночь', () => {
   });
 });
 
+describe('бот-убийца: ложь «в образ»', () => {
+  /** Все возможные вопросы про один признак */
+  const VALUES = {
+    sex: ['male', 'female'] as const,
+    age: [20, 40, 60] as const,
+    size: ['S', 'M', 'L'] as const,
+    height: ['small', 'medium', 'large'] as const
+  };
+
+  it('ответы про себя не противоречат друг другу', () => {
+    // главный признак силы: по трёхзначным характеристикам нельзя ответить «да» дважды
+    for (let i = 0; i < 20; i++) {
+      const state = gameAtNight('bot-persona-' + i);
+      const killer = state.citizens.find(c => c.id === state.killer.citizenId)!;
+
+      for (const attribute of ['age', 'size', 'height'] as const) {
+        const yes = VALUES[attribute].filter(value => {
+          const q = {
+            id: 'q',
+            citizenId: state.killer.citizenId,
+            attribute,
+            value,
+            viaDiner: false,
+            truth: killer[attribute] === value,
+            mustBeHonest: false
+          };
+          return decideAnswer(state, q);
+        });
+        // ровно одно значение признака подтверждается — это и есть связная легенда
+        expect(yes).toHaveLength(1);
+      }
+    }
+  });
+
+  it('легенда — живой житель, не сам убийца', () => {
+    for (let i = 0; i < 20; i++) {
+      const state = gameAtNight('bot-decoy-' + i);
+      const decoy = chooseDecoy(state);
+      expect(decoy).not.toBeNull();
+      expect(decoy!.id).not.toBe(state.killer.citizenId);
+      expect(state.positions.find(p => p.citizenId === decoy!.id)!.isDead).toBe(false);
+    }
+  });
+
+  it('подставного жителя бот не убивает', () => {
+    for (let i = 0; i < 25; i++) {
+      const state = gameAtNight('bot-protect-' + i);
+      const decoy = chooseDecoy(state);
+      const victim = chooseVictim(state);
+      if (victim === null || !decoy) continue;
+      expect(victim).not.toBe(decoy.id);
+    }
+  });
+
+  it('легенда не меняется, пока подставной жив', () => {
+    let state = gameAtNight('bot-stable');
+    const first = chooseDecoy(state);
+    const night = applyCommand(state, 'killer', decideNight(state));
+    expect(night.ok).toBe(true);
+    if (!night.ok || !first) return;
+    state = night.state;
+    const second = chooseDecoy(state);
+    expect(second?.id).toBe(first.id);
+  });
+});
+
 describe('бот-убийца: ответы на допрос', () => {
   function questionFor(state: GameState, citizenId: number, mustBeHonest: boolean, truth: boolean) {
     return {
@@ -94,26 +167,15 @@ describe('бот-убийца: ответы на допрос', () => {
     expect(decideAnswer(state, q)).toBe(true);
   });
 
-  it('за себя и помощника лжёт, если по этому признаку ещё не отвечали', () => {
-    const state = gameAtNight('bot-lie');
-    const q = questionFor(state, state.killer.citizenId, false, true);
-    expect(decideAnswer(state, q)).toBe(false);
-  });
-
-  it('не противоречит уже сказанному — иначе лжец виден сразу', () => {
-    const state = gameAtNight('bot-consistent');
-    state.answers.push({
-      id: 'old',
-      citizenId: 5,
-      attribute: 'sex',
-      value: 'male',
-      answer: true,
-      viaDiner: false,
-      turnNumber: 1
-    });
-    const q = questionFor(state, state.killer.citizenId, false, true);
-    // честный ответ уже прозвучал как «да» — бот повторяет его, а не переобувается
-    expect(decideAnswer(state, q)).toBe(true);
+  it('за себя отвечает по легенде, а не по своим настоящим признакам', () => {
+    for (let i = 0; i < 15; i++) {
+      const state = gameAtNight('bot-lie-' + i);
+      const decoy = chooseDecoy(state);
+      if (!decoy) continue;
+      const killer = state.citizens.find(c => c.id === state.killer.citizenId)!;
+      const q = questionFor(state, state.killer.citizenId, false, killer.sex === 'male');
+      expect(decideAnswer(state, q)).toBe(decoy.sex === 'male');
+    }
   });
 });
 

@@ -34,7 +34,14 @@ interface ActionDto {
   command: GameCommand;
 }
 
-@WebSocketGateway({ cors: { origin: '*' } })
+/** Список origin'ов задаётся через ALLOWED_ORIGINS; по умолчанию — как раньше, любой */
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+@WebSocketGateway({
+  cors: { origin: ALLOWED_ORIGINS && ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : '*' }
+})
 export class GameGateway implements OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;

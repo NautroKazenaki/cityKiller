@@ -1,11 +1,16 @@
 import { SCARES_PER_NIGHT, getNeighbors } from '../board';
 import { getValidKillTargets } from '../engine';
+import { getMotive } from '../motives';
 import type {
+  Citizen,
   CityMoveCommand,
   GameState,
   NightCommand,
-  PendingQuestion
+  PendingQuestion,
+  QuestionAttribute
 } from '../types';
+
+const ATTRS: QuestionAttribute[] = ['sex', 'age', 'size', 'height'];
 
 /**
  * Бот-убийца. Чистые функции над состоянием: сервер только вызывает их и
@@ -43,19 +48,86 @@ function distanceToCar(state: GameState, citizenId: number): number {
   return Math.abs(pos.districtX - state.detective.x) + Math.abs(pos.districtY - state.detective.y);
 }
 
+/** Расстояние между двумя жителями в кварталах */
+function distanceBetween(state: GameState, aId: number, bId: number): number {
+  const a = state.positions.find(p => p.citizenId === aId);
+  const b = state.positions.find(p => p.citizenId === bId);
+  if (!a || !b) return 0;
+  return Math.abs(a.districtX - b.districtX) + Math.abs(a.districtY - b.districtY);
+}
+
+function isAlive(state: GameState, citizenId: number): boolean {
+  const pos = state.positions.find(p => p.citizenId === citizenId);
+  return pos !== undefined && !pos.isDead;
+}
+
 /**
- * Жертва выбирается так, чтобы у мотива осталось больше возможностей на будущие
- * ночи, а при равенстве — подальше от машины детектива.
+ * Подставной житель — «легенда», за которую убийца выдаёт себя на допросах.
+ * Берём максимально непохожего на себя: тогда любая ложь про свои признаки
+ * складывается в портрет одного конкретного человека, а не в набор отговорок.
+ * Выбор устойчив: пока подставной жив, он не меняется, а убийца его не трогает.
+ */
+export function chooseDecoy(state: GameState): Citizen | null {
+  const killer = state.citizens.find(c => c.id === state.killer.citizenId);
+  if (!killer) return null;
+
+  let best: Citizen | null = null;
+  let bestScore = -1;
+  for (const c of state.citizens) {
+    if (c.id === killer.id || !isAlive(state, c.id)) continue;
+    const differences = ATTRS.filter(a => c[a] !== killer[a]).length;
+    // при равенстве — меньший id, чтобы выбор не прыгал от хода к ходу
+    if (differences > bestScore || (differences === bestScore && best && c.id < best.id)) {
+      bestScore = differences;
+      best = c;
+    }
+  }
+  return best;
+}
+
+/**
+ * Насколько убийство этой жертвы оставляет мотив неочевидным: сколько ещё мотивов
+ * из списка кандидатов разрешали бы такой же ход. Чем больше — тем труднее
+ * детективу вычеркнуть лишнее в своём списке.
+ */
+function motiveAmbiguity(state: GameState, victimId: number): number {
+  const victim = state.citizens.find(c => c.id === victimId);
+  const victimPosition = state.positions.find(p => p.citizenId === victimId);
+  if (!victim || !victimPosition) return 0;
+
+  return state.motiveOptions.filter(id => {
+    const motive = getMotive(id);
+    if (!motive) return false;
+    return motive.canKill({ victim, victimPosition, state });
+  }).length;
+}
+
+/**
+ * Выбор жертвы. Учитываем четыре вещи сразу:
+ * сохранить мотиву будущие цели, не выдать мотив, увести машину подальше от
+ * собственного персонажа (она приедет на место преступления) и сберечь тех,
+ * кто полезен живым — подставного жителя и группу-помощника.
  */
 export function chooseVictim(state: GameState): number | null {
   const targets = getValidKillTargets(state);
   if (targets.length === 0) return null;
 
+  const decoy = chooseDecoy(state);
+  const allyGroup = state.killer.allyGroup;
+
   let best = targets[0];
   let bestScore = -Infinity;
   for (const id of targets) {
+    const citizen = state.citizens.find(c => c.id === id)!;
     const future = targetsAfterKill(state, id);
-    const score = future * 10 + distanceToCar(state, id);
+    const ambiguity = motiveAmbiguity(state, id);
+    // машина детектива уедет на место преступления — уводим её от себя
+    const awayFromMe = distanceBetween(state, id, state.killer.citizenId);
+
+    let score = future * 8 + ambiguity * 6 + awayFromMe * 4 + distanceToCar(state, id);
+    if (decoy && id === decoy.id) score -= 1000; // легенду не трогаем
+    if (citizen.group === allyGroup) score -= 15; // помощники нужны живыми
+
     if (score > bestScore) {
       bestScore = score;
       best = id;
@@ -109,19 +181,22 @@ export function decideNight(state: GameState): NightCommand {
  * Ответ на допрос. За обычного жителя движок всё равно заставит сказать правду,
  * поэтому решение нужно только за себя и за группу-помощника.
  *
- * Правило: лжём, только если по этому признаку детектив ещё не получал ответа.
- * Иначе отвечаем так же, как уже отвечали, — два разных ответа на один вопрос
- * выдали бы лжеца с головой.
+ * Лжём не наугад, а «в образ» подставного жителя: отвечаем так, будто убийца —
+ * это он. Простое отрицание своих признаков выдаёт себя на признаках с тремя
+ * значениями: на «убийце 20?» и «убийце 60?» пришлось бы ответить «да» дважды.
+ * Легенда же даёт связный портрет, который не противоречит сам себе.
  */
 export function decideAnswer(state: GameState, question: PendingQuestion): boolean {
   if (question.mustBeHonest) return question.truth;
 
+  const decoy = chooseDecoy(state);
+  if (decoy) return decoy[question.attribute] === question.value;
+
+  // подставного не нашлось — хотя бы не подтверждаем правду о себе
   const previous = state.answers.find(
     a => a.attribute === question.attribute && a.value === question.value
   );
   if (previous) return previous.answer;
-
-  // «Нет» на свой настоящий признак и «да» на чужой — оба ответа уводят от убийцы
   return !question.truth;
 }
 

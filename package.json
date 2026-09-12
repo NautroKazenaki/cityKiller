@@ -11,6 +11,8 @@
     "dev:client": "npm run dev -w @citykiller/client",
     "dev:server": "npm run build:shared && npm run start:dev -w @citykiller/server",
     "build": "npm run build:shared && npm run build -w @citykiller/server && npm run build -w @citykiller/client",
+    "start": "node apps/server/dist/main.js",
+    "serve": "npm run build && npm start",
     "test": "npm run test -w @citykiller/shared",
     "desktop": "npm run start -w @citykiller/desktop",
     "e2e": "node scripts/e2e-smoke.mjs && node scripts/e2e-fullgame.mjs"
