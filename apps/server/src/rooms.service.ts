@@ -14,6 +14,8 @@ export interface PlayerSlot {
   token: string;
   username: string;
   socketId: string | null;
+  /** Ботом управляет сервер: он не подключается сокетом и всегда «на месте» */
+  isBot?: boolean;
 }
 
 export interface Room {
@@ -21,6 +23,11 @@ export interface Room {
   state: GameState | null;
   players: Partial<Record<PlayerRole, PlayerSlot>>;
 }
+
+const BOT_NAME: Record<PlayerRole, string> = {
+  detective: 'Инспектор Кроу',
+  killer: 'Тень'
+};
 
 function generateRoomCode(): string {
   // 5 символов без похожих букв
@@ -61,7 +68,12 @@ export class RoomsService implements OnModuleInit {
     }
   }
 
-  createRoom(username: string, role: PlayerRole, socketId: string): { room: Room; token: string } {
+  createRoom(
+    username: string,
+    role: PlayerRole,
+    socketId: string,
+    withBot = false
+  ): { room: Room; token: string } {
     let roomCode = generateRoomCode();
     while (this.rooms.has(roomCode)) {
       roomCode = generateRoomCode();
@@ -74,8 +86,30 @@ export class RoomsService implements OnModuleInit {
         [role]: { token, username, socketId }
       }
     };
+
+    // Партия против бота начинается сразу: второй слот занимает сервер
+    if (withBot) {
+      const botRole: PlayerRole = role === 'detective' ? 'killer' : 'detective';
+      room.players[botRole] = {
+        token: randomUUID(),
+        username: BOT_NAME[botRole],
+        socketId: null,
+        isBot: true
+      };
+      room.state = createGame(randomUUID());
+    }
+
     this.rooms.set(roomCode, room);
+    if (room.state) this.saveRoom(room);
     return { room, token };
+  }
+
+  /** Роль, за которую в этой комнате играет бот */
+  botRole(room: Room): PlayerRole | null {
+    for (const role of ['detective', 'killer'] as PlayerRole[]) {
+      if (room.players[role]?.isBot) return role;
+    }
+    return null;
   }
 
   joinRoom(

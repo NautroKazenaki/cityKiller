@@ -5,6 +5,8 @@ import { FONT, LAYOUT, P, SHADOW } from '@/design/tokens';
 import { generateCityIn, seedFromId } from '@/design/cityArt';
 import { HEIGHT_SHORT } from '@/lib/labels';
 import { DistrictCell } from './DistrictCell';
+import { DetectiveCar } from './DetectiveCar';
+import { useChitFlip } from './useChitFlip';
 import type { ChitMarker } from './Chit';
 
 export interface GameSheetProps {
@@ -85,6 +87,9 @@ export function GameSheet({
 }: GameSheetProps) {
   const art = useMemo(() => generateCityIn(1000, 1000, seedFromId(gameId), 17), [gameId]);
   const tokenIds = policeTokens.map(t => t.citizenId);
+  const registerChit = useChitFlip(positions);
+  const carOnCrime =
+    !!detective && victims.some(v => v.districtX === detective.x && v.districtY === detective.y);
 
   const cells: Array<{ x: number; y: number }> = [];
   for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) cells.push({ x, y });
@@ -160,19 +165,19 @@ export function GameSheet({
           ))}
         </svg>
 
-        {/* ночной слой: холодный полумрак над бумагой */}
-        {night && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 2,
-              pointerEvents: 'none',
-              background:
-                'linear-gradient(180deg, oklch(0.3 0.06 285 / .82), oklch(0.24 0.05 285 / .88))'
-            }}
-          />
-        )}
+        {/* ночной слой: холодный полумрак наезжает на бумагу за 900 мс */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            pointerEvents: 'none',
+            opacity: night ? 1 : 0,
+            transition: 'opacity .9s ease-in-out',
+            background:
+              'linear-gradient(180deg, oklch(0.3 0.06 285 / .82), oklch(0.24 0.05 285 / .88))'
+          }}
+        />
 
         {/* слой 2: высечка районов */}
         <svg
@@ -255,11 +260,15 @@ export function GameSheet({
               pendingCitizenIds={pendingCitizenIds}
               markers={markers}
               night={night}
+              registerChit={registerChit}
               onDistrictClick={onDistrictClick ? () => onDistrictClick(x, y) : undefined}
               onCitizenClick={onCitizenClick}
             />
           ))}
         </div>
+
+        {/* фишка детектива едет над сеткой районов */}
+        <DetectiveCar district={detective} withCrime={carOnCrime} />
       </div>
 
       {/* ---- ПОЛОСА НОМЕРОВ РЯДОВ ---- */}

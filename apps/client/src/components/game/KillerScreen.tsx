@@ -273,23 +273,23 @@ export function KillerScreen({
         overflow: 'hidden'
       }}
     >
-      {/* ночью лампа над картой гаснет */}
-      {!isNight && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: -160,
-            width: 1100,
-            height: 620,
-            transform: 'translateX(-50%)',
-            background:
-              'radial-gradient(ellipse 50% 50% at 50% 50%, oklch(0.78 0.07 78 / .17), transparent 70%)',
-            pointerEvents: 'none',
-            animation: 'ck-lamp 6s ease-in-out infinite'
-          }}
-        />
-      )}
+      {/* ночью лампа над картой гаснет — вместе со слоем ночи это и есть смена фазы */}
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: -160,
+          width: 1100,
+          height: 620,
+          transform: 'translateX(-50%)',
+          background:
+            'radial-gradient(ellipse 50% 50% at 50% 50%, oklch(0.78 0.07 78 / .17), transparent 70%)',
+          pointerEvents: 'none',
+          opacity: isNight ? 0 : 1,
+          transition: 'opacity .9s ease-in-out',
+          animation: 'ck-lamp 6s ease-in-out infinite'
+        }}
+      />
 
       <TopBar
         roomCode={roomCode}

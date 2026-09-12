@@ -15,6 +15,8 @@ interface ChitProps {
   /** Выбран для текущего перемещения */
   pending?: boolean;
   marker?: ChitMarker | null;
+  /** Регистрация узла для FLIP-переезда между районами */
+  register?: (el: HTMLElement | null) => void;
   onClick?: () => void;
 }
 
@@ -56,6 +58,7 @@ export function Chit({
   selectable,
   pending = false,
   marker = null,
+  register,
   onClick
 }: ChitProps) {
   const size = big ? 52 : 46;
@@ -64,6 +67,7 @@ export function Chit({
 
   return (
     <div
+      ref={register}
       title={`${citizen.job} · ${GROUP_CHIT[citizen.group]}${scared ? ' · запуган' : ''}`}
       onClick={
         selectable && onClick

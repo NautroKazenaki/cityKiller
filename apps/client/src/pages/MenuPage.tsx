@@ -24,7 +24,7 @@ interface HistoryEntry {
   updatedAt: string;
 }
 
-type Mode = 'create' | 'join';
+type Mode = 'bot' | 'create' | 'join';
 
 /** Нож убийцы — собственный глиф, эмодзи в интерфейсе запрещены */
 const KNIFE = 'M14 3l7 7-4 4-7-7zM10 8L3 15v6h6l7-7';
@@ -64,7 +64,7 @@ export function MenuPage() {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [role, setRole] = useState<PlayerRole>('detective');
-  const [mode, setMode] = useState<Mode>('create');
+  const [mode, setMode] = useState<Mode>('bot');
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -110,7 +110,11 @@ export function MenuPage() {
       return;
     }
 
-    const ack = await emitWithAck<RoomAck>('room:create', { username: username.trim(), role });
+    const ack = await emitWithAck<RoomAck>('room:create', {
+      username: username.trim(),
+      role,
+      withBot: mode === 'bot'
+    });
     if (!ack.ok || !ack.roomCode || !ack.playerToken) {
       setError(ack.error ?? 'Не удалось открыть дело');
       return;
@@ -221,13 +225,13 @@ export function MenuPage() {
             }}
           >
             {ROLES.map(r => {
-              const on = role === r.role && mode === 'create';
+              const on = role === r.role && mode !== 'join';
               return (
                 <button
                   key={r.role}
                   onClick={() => {
                     setRole(r.role);
-                    setMode('create');
+                    if (mode === 'join') setMode('create');
                   }}
                   style={{
                     display: 'flex',
@@ -299,8 +303,9 @@ export function MenuPage() {
             <div style={{ display: 'flex', gap: 9 }}>
               {(
                 [
-                  { key: 'create' as const, label: 'ОТКРЫТЬ НОВОЕ ДЕЛО' },
-                  { key: 'join' as const, label: 'ПО КОДУ ДЕЛА' }
+                  { key: 'bot' as const, label: 'ПРОТИВ БОТА' },
+                  { key: 'create' as const, label: 'ПО СЕТИ' },
+                  { key: 'join' as const, label: 'ПО КОДУ' }
                 ]
               ).map(m => {
                 const on = mode === m.key;
@@ -375,8 +380,24 @@ export function MenuPage() {
               />
             )}
 
+            {mode === 'bot' && (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: 'oklch(0.66 0.014 80)'
+                }}
+              >
+                {role === 'detective'
+                  ? 'Убийцу ведёт сервер: он выбирает жертву по своему мотиву, пугает жителей и лжёт на допросах.'
+                  : 'Бот-детектива пока нет — выберите роль детектива или сыграйте по сети.'}
+              </p>
+            )}
+
             <button
               onClick={openCase}
+              disabled={mode === 'bot' && role === 'killer'}
               style={{
                 width: '100%',
                 height: 54,
@@ -393,7 +414,7 @@ export function MenuPage() {
                 boxShadow: '0 3px 0 oklch(0.5 0.1 72)'
               }}
             >
-              {mode === 'join' ? 'Войти в дело' : 'Открыть дело'}
+              {mode === 'join' ? 'Войти в дело' : mode === 'bot' ? 'Играть против бота' : 'Открыть дело'}
             </button>
 
             {error && (

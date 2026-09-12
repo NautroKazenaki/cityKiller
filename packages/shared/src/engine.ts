@@ -11,6 +11,7 @@ import {
   nextSubPosition
 } from './board';
 import { getMotive } from './motives';
+import { GROUP_TITLES } from './data/groups';
 import {
   AccuseCommand,
   AnswerCommand,
@@ -423,7 +424,7 @@ function applyUseBuilding(state: GameState, cmd: UseBuildingCommand): ApplyResul
         pos.districtY = move.toY;
         pos.subPosition = nextSubPosition(state.positions, move.toX, move.toY);
       }
-      log(state, 'detective', `Пожарные: детектив подвигал жителей группы «${group}».`);
+      log(state, 'detective', `Пожарные: детектив подвигал жителей группы «${GROUP_TITLES[group]}».`);
       break;
     }
     case 'diner': {
@@ -525,7 +526,7 @@ function beginCityStage(state: GameState, stage: CityStage): void {
   log(
     state,
     'system',
-    `Фаза Города: ${who} тянет жетон группы «${draw.group}»${
+    `Фаза Города: ${who} тянет жетон группы «${GROUP_TITLES[draw.group]}»${
       draw.empty ? ' — живых представителей не осталось, нужно выбрать другую группу' : ''
     }.`
   );
@@ -577,7 +578,11 @@ function applyCityChooseGroup(state: GameState, cmd: CityChooseGroupCommand): Ap
   const emptyGroup = state.city.emptyGroupNotice;
   state.cityTokenPool = state.cityTokenPool.filter(g => g !== emptyGroup);
   state.city = { stage: state.city.stage, group: cmd.group, emptyGroupNotice: null };
-  log(state, 'system', `Жетон группы «${emptyGroup}» удалён из игры навсегда. Выбрана группа «${cmd.group}».`);
+  log(
+    state,
+    'system',
+    `Жетон группы «${GROUP_TITLES[emptyGroup]}» удалён из игры навсегда. Выбрана группа «${GROUP_TITLES[cmd.group]}».`
+  );
   return { ok: true, state };
 }
 
@@ -625,7 +630,7 @@ function applyCityMove(state: GameState, cmd: CityMoveCommand): ApplyResult {
   log(
     state,
     stage === 'killer' ? 'killer' : 'detective',
-    `${who} передвинул(а) жителей группы «${state.city.group}» (${cmd.moves.length}).`
+    `${who} передвинул(а) жителей группы «${GROUP_TITLES[state.city.group]}»: ${cmd.moves.length}.`
   );
 
   if (stage === 'killer') {

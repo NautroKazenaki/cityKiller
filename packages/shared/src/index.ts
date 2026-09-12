@@ -4,4 +4,5 @@ export * from './motives';
 export * from './setup';
 export * from './engine';
 export * from './views';
-export { CITIZEN_GROUPS, getGroupForJob } from './data/groups';
+export * as killerBot from './bot/killer';
+export { CITIZEN_GROUPS, GROUP_TITLES, getGroupForJob } from './data/groups';

@@ -75,6 +75,19 @@ export const CITIZEN_GROUPS: Record<string, CitizenGroup> = {
   'Прокурор': 'creative'
 };
 
+/** Названия групп для логов и интерфейса */
+export const GROUP_TITLES: Record<CitizenGroup, string> = {
+  government: 'Власть',
+  criminal: 'Криминал',
+  medical: 'Медицина',
+  service: 'Сервис',
+  entertainment: 'Развлечения',
+  education: 'Образование',
+  emergency: 'Экстренные службы',
+  business: 'Бизнес',
+  creative: 'Творчество'
+};
+
 export function getGroupForJob(job: string): CitizenGroup {
   return CITIZEN_GROUPS[job] ?? 'business';
 }

@@ -21,6 +21,7 @@ export interface DistrictCellProps {
   /** Ночные метки убийцы: жертва, испуг, своя личность */
   markers: Record<number, ChitMarker>;
   night: boolean;
+  registerChit?: (citizenId: number, el: HTMLElement | null) => void;
   onDistrictClick?: () => void;
   onCitizenClick?: (citizenId: number) => void;
 }
@@ -44,6 +45,7 @@ export function DistrictCell({
   pendingCitizenIds,
   markers,
   night,
+  registerChit,
   onDistrictClick,
   onCitizenClick
 }: DistrictCellProps) {
@@ -195,6 +197,7 @@ export function DistrictCell({
               selectable={selectableCitizenIds.includes(pos.citizenId)}
               pending={pendingCitizenIds.includes(pos.citizenId)}
               marker={markers[pos.citizenId] ?? null}
+              register={el => registerChit?.(pos.citizenId, el)}
               onClick={() => onCitizenClick?.(pos.citizenId)}
             />
           );
@@ -262,58 +265,6 @@ export function DistrictCell({
         </div>
       )}
 
-      {/* фишка детектива — единственное цветное свечение на экране */}
-      {hasCar && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: `translate(-50%,${crime ? '4%' : '-50%'})`,
-            pointerEvents: 'none'
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              width: 150,
-              height: 150,
-              transform: 'translate(-50%,-50%)',
-              borderRadius: 9999,
-              background: 'radial-gradient(circle, oklch(0.62 0.12 250 / .22), transparent 68%)',
-              pointerEvents: 'none'
-            }}
-          />
-          <div
-            style={{
-              position: 'relative',
-              width: 50,
-              height: 50,
-              borderRadius: 5,
-              background: 'linear-gradient(165deg, oklch(0.36 0.1 252), oklch(0.24 0.07 252))',
-              border: '2.5px solid oklch(0.72 0.1 250)',
-              boxShadow: '0 3px 0 oklch(0.18 0.04 252), 0 10px 18px -6px rgba(0,0,0,.7)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              style={{ width: 26, height: 26 }}
-              fill="none"
-              stroke="oklch(0.93 0.03 250)"
-              strokeWidth={1.9}
-              strokeLinecap="square"
-            >
-              <path d="M3 14h18M5 14l2-6h10l2 6M5 14v4h3v-4M16 14v4h3v-4" />
-              <path d="M9 8V5h6v3" />
-            </svg>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
