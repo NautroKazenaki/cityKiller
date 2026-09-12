@@ -471,11 +471,10 @@ function applyPoliceQuestion(state: GameState, cmd: PoliceQuestionCommand): Appl
   // можно выполнять сколько угодно раз за фазу.
   if (state.pendingQuestion) return fail('Сначала дождитесь ответа на предыдущий вопрос');
 
+  // Правила не требуют ждать следующий ход: жетон кладут и тут же могут спросить.
+  // Ожидание обесценивало жетон, положенный в последний день партии.
   const token = state.policeTokens.find(t => t.citizenId === cmd.citizenId);
   if (!token) return fail('На этом жителе нет жетона');
-  if (token.placedTurn >= state.turnNumber) {
-    return fail('Спросить по жетону можно только на следующем ходу');
-  }
   const pos = getPosition(state, cmd.citizenId);
   if (!pos || pos.isDead) return fail('Житель мёртв');
 

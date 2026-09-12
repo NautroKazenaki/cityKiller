@@ -347,7 +347,7 @@ describe('здания', () => {
     expect(state.turn.abilitiesLeft).toBe(1);
   });
 
-  it('участок: жетон работает только со следующего хода и отвечает честно', () => {
+  it('участок: по жетону можно спросить сразу, ответ всегда честный', () => {
     let state = newGameInDay();
     const police = state.buildings.find(b => b.type === 'police')!;
     state.detective = { x: police.districtX, y: police.districtY };
@@ -359,21 +359,7 @@ describe('здания', () => {
     });
     expect(state.policeTokens).toHaveLength(1);
 
-    // В этот же ход спросить нельзя
-    const early = applyCommand(state, 'detective', {
-      type: 'detective:policeQuestion',
-      citizenId: someone.citizenId
-    });
-    expect(early.ok).toBe(false);
-
-    // Следующий ход
-    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
-    state = passCityPhase(state);
-    state = doNight(state);
-    if (state.phase === 'relocation') state = doRelocation(state);
-    if (state.phase !== 'day') return; // 5-е убийство в тесте маловероятно
-    if (state.positions.find(p => p.citizenId === someone.citizenId)!.isDead) return; // жетон снят вместе со смертью носителя
-
+    // Спросить можно сразу же: правила не требуют ждать следующий ход
     const expected = canKillNow(state, someone.citizenId);
     const abilitiesBefore = state.turn.abilitiesLeft;
     state = mustApply(state, 'detective', {

@@ -196,7 +196,7 @@ export function KillerScreen({
       return [
         {
           n: '1',
-          text: isCityMyTurn ? 'Двигать свою группу' : 'Ход детектива',
+          text: isCityMyTurn ? 'Ваш жетон группы' : 'Жетон детектива',
           state: view.city ? GROUP_LABELS[view.city.group].toUpperCase() : '',
           done: isCityMyTurn
         },

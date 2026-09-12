@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { Citizen } from '@citykiller/shared';
 import { FONT, P, SHADOW } from '@/design/tokens';
 import { GROUP_CHIT, chitRing, monogram } from '@/design/city';
+import { HEIGHT_SHORT } from '@/lib/labels';
 
 /** Ночные метки убийцы: жертва, испуг, собственная личность */
 export type ChitMarker = 'victim' | 'scare' | 'self';
@@ -61,6 +63,7 @@ export function Chit({
   register,
   onClick
 }: ChitProps) {
+  const [hover, setHover] = useState(false);
   const size = big ? 52 : 46;
   const ring = chitRing(citizen.color);
   const m = marker ? MARKERS[marker] : null;
@@ -69,6 +72,8 @@ export function Chit({
     <div
       ref={register}
       title={`${citizen.job} · ${GROUP_CHIT[citizen.group]}${scared ? ' · запуган' : ''}`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       onClick={
         selectable && onClick
           ? e => {
@@ -178,6 +183,54 @@ export function Chit({
             {m.label}
           </span>
         </>
+      )}
+
+      {/* Характеристики по наведению — чтобы не прокликивать каждого жителя */}
+      {hover && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: size + 12,
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            pointerEvents: 'none',
+            background: P.paper,
+            border: '1px solid oklch(0.45 0.03 60)',
+            borderRadius: 2,
+            padding: '7px 10px',
+            boxShadow: '0 10px 22px -8px rgba(0,0,0,.8)',
+            whiteSpace: 'nowrap',
+            textAlign: 'center'
+          }}
+        >
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: P.paperInk, lineHeight: 1.2 }}>
+            {citizen.job}
+          </div>
+          <div
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 10,
+              color: 'oklch(0.42 0.03 55)',
+              marginTop: 3
+            }}
+          >
+            {citizen.sex === 'male' ? '♂' : '♀'} · {citizen.age} · {citizen.size} ·{' '}
+            {HEIGHT_SHORT[citizen.height]}
+          </div>
+          <div
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 9,
+              letterSpacing: '0.12em',
+              color: 'oklch(0.5 0.03 55)',
+              marginTop: 2
+            }}
+          >
+            {GROUP_CHIT[citizen.group]}
+            {scared ? ' · ЗАПУГАН' : ''}
+          </div>
+        </div>
       )}
 
       {/* Жетон полиции */}

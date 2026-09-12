@@ -16,6 +16,8 @@ import { LeftColumn } from './shell/LeftColumn';
 import { CaseFolder, type CitizenState } from './shell/CaseFolder';
 import { CaseTabs } from './shell/CaseTabs';
 import { SuspectsSheet } from './shell/SuspectsSheet';
+import { Journal } from './shell/Journal';
+import { MotivesPanel } from './shell/MotivesPanel';
 import { DangerButton, HintBox, PrimaryButton, type ActionSpec } from './shell/ActionRow';
 import { QuestionDialog } from './QuestionDialog';
 import { AccuseDialog } from './AccuseDialog';
@@ -45,7 +47,9 @@ export function DetectiveScreen({
   onMenu
 }: DetectiveScreenProps) {
   const [selected, setSelected] = useState<{ x: number; y: number } | null>(null);
-  const [tab, setTab] = useState<'place' | 'suspects'>('place');
+  const [tab, setTab] = useState<'place' | 'journal' | 'motives'>('place');
+  /** Вычеркнутые мотивы — личные пометки детектива, движок о них не знает */
+  const [crossedMotives, setCrossedMotives] = useState<string[]>([]);
   const [mode, setMode] = useState<TargetMode>('idle');
   const [questionTarget, setQuestionTarget] = useState<{ citizenId: number; viaDiner: boolean } | null>(null);
   const [accuseOpen, setAccuseOpen] = useState(false);
@@ -323,6 +327,14 @@ export function DetectiveScreen({
   });
 
   const badges: Array<{ label: string; tone: 'plain' | 'police' | 'blood' }> = [];
+  if (view.phase === 'city' && view.city) {
+    badges.push({
+      label: `${view.city.stage === 'detective' ? 'ВАШ ЖЕТОН' : 'ЖЕТОН УБИЙЦЫ'}: ${GROUP_LABELS[
+        view.city.group
+      ].toUpperCase()}`,
+      tone: view.city.stage === 'detective' ? 'police' : 'blood'
+    });
+  }
   if (selected) {
     badges.push({
       label: `ЖИТЕЛЕЙ ${selectedCitizens.length}/${MAX_CITIZENS_PER_DISTRICT}`,
@@ -380,7 +392,9 @@ export function DetectiveScreen({
         list.push({
           id: 'city-wait',
           title: 'Фаза Города: ходит убийца',
-          desc: view.city ? `Жетон группы «${GROUP_LABELS[view.city.group]}»` : '',
+          desc: view.city
+            ? `Убийца тянул жетон «${GROUP_LABELS[view.city.group]}» и двигает эту группу`
+            : '',
           icon: 'lock',
           tone: 'disabled'
         });
@@ -395,8 +409,8 @@ export function DetectiveScreen({
       } else {
         list.push({
           id: 'city-move',
-          title: `Двигайте группу «${view.city ? GROUP_LABELS[view.city.group] : ''}»`,
-          desc: 'Житель на карте, затем соседний район. Можно никого',
+          title: `Ваш жетон: «${view.city ? GROUP_LABELS[view.city.group] : ''}»`,
+          desc: 'Кликните жителя этой группы, затем соседний район. Можно никого не двигать',
           icon: 'move',
           tone: 'plain'
         });
@@ -463,13 +477,13 @@ export function DetectiveScreen({
     selectedCitizens.forEach(p => {
       const token = view.policeTokens.find(t => t.citizenId === p.citizenId);
       if (!token) return;
-      const ready = token.placedTurn < view.turnNumber;
+
       list.push({
         id: `token-${p.citizenId}`,
         title: `Спросить по жетону: ${citizenById(p.citizenId).job}`,
-        desc: ready ? 'Честный ответ. Бесплатно, жетон сгорает' : 'Жетон сработает со следующего хода',
+        desc: 'Честный ответ. Бесплатно, жетон сгорает',
         icon: 'token',
-        tone: ready && canAct ? 'police' : 'disabled',
+        tone: canAct ? 'police' : 'disabled',
         onClick: () => sendCommand({ type: 'detective:policeQuestion', citizenId: p.citizenId })
       });
     });
@@ -638,10 +652,14 @@ export function DetectiveScreen({
           <CaseTabs
             tabs={[
               { id: 'place', label: 'МЕСТО' },
-              { id: 'suspects', label: `ПОДОЗРЕВАЕМЫЕ · ${suspectCount}` }
+              { id: 'journal', label: `ЖУРНАЛ · ${suspectCount}` },
+              {
+                id: 'motives',
+                label: `МОТИВЫ · ${view.motiveOptions.length - crossedMotives.length}`
+              }
             ]}
             active={tab}
-            onSelect={id => setTab(id as 'place' | 'suspects')}
+            onSelect={id => setTab(id as 'place' | 'journal' | 'motives')}
           />
 
           <div
@@ -655,7 +673,46 @@ export function DetectiveScreen({
               marginTop: -12
             }}
           >
-            {tab === 'suspects' ? (
+            {tab === 'journal' ? (
+              <div
+                style={{
+                  background: 'oklch(0.225 0.013 55)',
+                  border: '1px solid oklch(0.3 0.015 55)',
+                  borderRadius: '0 0 5px 5px',
+                  padding: '14px 15px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 18,
+                  boxShadow: '0 1px 0 oklch(0.4 0.02 55 / .22) inset, 0 10px 24px -12px rgba(0,0,0,.7)'
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontFamily: FONT.mono,
+                      fontSize: 9.5,
+                      letterSpacing: '0.24em',
+                      color: P.gold,
+                      marginBottom: 9
+                    }}
+                  >
+                    ЖУРНАЛ ДОПРОСОВ
+                  </div>
+                  <Journal
+                    citizens={view.citizens}
+                    positions={view.positions}
+                    answers={view.answers}
+                    policeAnswers={view.policeAnswers}
+                  />
+                </div>
+                <SuspectsSheet
+                  citizens={view.citizens}
+                  positions={view.positions}
+                  answers={view.answers}
+                  policeAnswers={view.policeAnswers}
+                />
+              </div>
+            ) : tab === 'motives' ? (
               <div
                 style={{
                   background: 'oklch(0.225 0.013 55)',
@@ -665,11 +722,14 @@ export function DetectiveScreen({
                   boxShadow: '0 1px 0 oklch(0.4 0.02 55 / .22) inset, 0 10px 24px -12px rgba(0,0,0,.7)'
                 }}
               >
-                <SuspectsSheet
-                  citizens={view.citizens}
-                  positions={view.positions}
-                  answers={view.answers}
-                  policeAnswers={view.policeAnswers}
+                <MotivesPanel
+                  motiveOptions={view.motiveOptions}
+                  crossed={crossedMotives}
+                  onToggle={id =>
+                    setCrossedMotives(prev =>
+                      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+                    )
+                  }
                 />
               </div>
             ) : (
@@ -821,6 +881,15 @@ export function DetectiveScreen({
           return pos && !pos.isDead;
         })}
         motiveOptions={view.motiveOptions}
+        crossedMotives={crossedMotives}
+        journal={
+          <Journal
+            citizens={view.citizens}
+            positions={view.positions}
+            answers={view.answers}
+            policeAnswers={view.policeAnswers}
+          />
+        }
         onSubmit={(job, motiveId) => {
           void sendCommand({ type: 'detective:accuse', job, motiveId });
           setAccuseOpen(false);

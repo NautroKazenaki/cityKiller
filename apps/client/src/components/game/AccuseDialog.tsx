@@ -10,6 +10,10 @@ interface AccuseDialogProps {
   citizens: Citizen[];
   /** id 6 мотивов-кандидатов, среди которых один настоящий */
   motiveOptions: string[];
+  /** Мотивы, которые детектив вычеркнул по ходу партии */
+  crossedMotives: string[];
+  /** Журнал допросов — под рукой, чтобы не вспоминать ответы по памяти */
+  journal: React.ReactNode;
   onSubmit: (job: string, motiveId: string) => void;
   onClose: () => void;
 }
@@ -23,11 +27,14 @@ export function AccuseDialog({
   forced,
   citizens,
   motiveOptions,
+  crossedMotives,
+  journal,
   onSubmit,
   onClose
 }: AccuseDialogProps) {
   const [job, setJob] = useState<string | null>(null);
   const [motiveId, setMotiveId] = useState<string | null>(null);
+  const [journalOpen, setJournalOpen] = useState(false);
 
   if (!open) return null;
   const motives = MOTIVE_DESCRIPTORS.filter(m => motiveOptions.includes(m.id));
@@ -51,8 +58,9 @@ export function AccuseDialog({
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          width: 760,
+          width: journalOpen ? 1180 : 760,
           maxWidth: '100%',
+          transition: 'width .2s ease',
           maxHeight: 'calc(100vh - 48px)',
           display: 'flex',
           flexDirection: 'column',
@@ -109,7 +117,8 @@ export function AccuseDialog({
           </p>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18 }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: 18 }}>
           <Label text="КТО УБИЙЦА" />
           <div
             style={{
@@ -177,6 +186,7 @@ export function AccuseDialog({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             {motives.map(m => {
               const on = motiveId === m.id;
+              const crossed = crossedMotives.includes(m.id) && !on;
               return (
                 <button
                   key={m.id}
@@ -187,11 +197,13 @@ export function AccuseDialog({
                     border: `1px solid ${on ? 'oklch(0.5 0.12 27)' : 'oklch(0.33 0.015 55)'}`,
                     background: on ? 'oklch(0.3 0.06 27)' : 'oklch(0.26 0.014 55)',
                     cursor: 'pointer',
-                    textAlign: 'left'
+                    textAlign: 'left',
+                    opacity: crossed ? 0.4 : 1
                   }}
                 >
                   <div
                     style={{
+                      textDecoration: crossed ? 'line-through' : 'none',
                       fontFamily: FONT.display,
                       fontSize: 20,
                       fontWeight: 700,
@@ -218,6 +230,23 @@ export function AccuseDialog({
           </div>
         </div>
 
+        {journalOpen && (
+          <div
+            style={{
+              width: 420,
+              flexShrink: 0,
+              borderLeft: '1px solid oklch(0.3 0.015 55)',
+              overflowY: 'auto',
+              padding: 18,
+              background: 'oklch(0.2 0.012 55)'
+            }}
+          >
+            <Label text="ЖУРНАЛ ДОПРОСОВ" />
+            {journal}
+          </div>
+        )}
+        </div>
+
         <div
           style={{
             padding: 18,
@@ -227,6 +256,23 @@ export function AccuseDialog({
             flexShrink: 0
           }}
         >
+          <button
+            onClick={() => setJournalOpen(v => !v)}
+            style={{
+              width: 150,
+              height: 50,
+              borderRadius: 4,
+              border: `1px solid ${journalOpen ? 'oklch(0.5 0.1 76)' : 'oklch(0.36 0.015 55)'}`,
+              background: journalOpen ? 'oklch(0.3 0.05 78)' : 'transparent',
+              color: journalOpen ? 'oklch(0.92 0.05 82)' : 'oklch(0.72 0.014 80)',
+              fontFamily: FONT.mono,
+              fontSize: 11,
+              letterSpacing: '0.12em',
+              cursor: 'pointer'
+            }}
+          >
+            {journalOpen ? '← СКРЫТЬ ЖУРНАЛ' : 'ЖУРНАЛ →'}
+          </button>
           {!forced && (
             <button
               onClick={onClose}
