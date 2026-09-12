@@ -13,24 +13,30 @@ export function districtTitle(x: number, y: number): string {
   return DISTRICT_NAMES[y]?.[x] ?? `${String.fromCharCode(65 + x)}${y + 1}`;
 }
 
-/** Цвета жителей из движка → палитра жетонов макета */
-const COLOR_TO_CHIT: Record<string, ChitColor> = {
-  purple: 'purple',
-  blue: 'blue',
-  lightBlue: 'sky',
-  pink: 'pink',
-  red: 'red',
-  yellow: 'amber',
-  green: 'green',
-  orange: 'orange',
-  brown: 'brown',
-  gray: 'gray',
-  black: 'slate',
-  white: 'bone'
+/**
+ * Цвет жетона — по ГРУППЕ, а не по личному цвету жителя.
+ * Личный цвет ни о чём не говорил игроку; группа — то, чем он реально оперирует:
+ * видно, из какой группы жертва, не читая подписей.
+ */
+const GROUP_TO_CHIT: Record<CitizenGroup, ChitColor> = {
+  government: 'blue',
+  criminal: 'red',
+  medical: 'green',
+  service: 'sky',
+  entertainment: 'pink',
+  education: 'purple',
+  emergency: 'orange',
+  business: 'brown',
+  creative: 'amber'
 };
 
-export function chitRing(color: string): string {
-  return CHIT[COLOR_TO_CHIT[color] ?? 'gray'];
+export function groupRing(group: CitizenGroup): string {
+  return CHIT[GROUP_TO_CHIT[group]];
+}
+
+/** Заливка ядра жетона: тот же цвет, разбавленный бумагой */
+export function groupFill(group: CitizenGroup, strength = 20): string {
+  return `color-mix(in oklch, ${groupRing(group)} ${strength}%, ${'oklch(0.93 0.02 85)'})`;
 }
 
 /** Подписи групп на жетоне: моно, верхний регистр, как на макете */

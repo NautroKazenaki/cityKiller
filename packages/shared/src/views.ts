@@ -33,6 +33,8 @@ export function viewForDetective(state: GameState): DetectiveView {
     city: state.city,
     winner: state.winner,
     winReason: state.winReason,
+    // Разгадку отдаём только когда партия кончилась: до финала это прямая утечка
+    reveal: state.phase === 'finished' ? state.killer : null,
     log: state.log
   };
 }

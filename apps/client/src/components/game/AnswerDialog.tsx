@@ -1,6 +1,6 @@
 import type { Citizen, PendingQuestion } from '@citykiller/shared';
 import { FONT, P, RADIUS, SHADOW } from '@/design/tokens';
-import { chitRing, monogram } from '@/design/city';
+import { groupRing, monogram } from '@/design/city';
 import { GROUP_LABELS, HEIGHT_SHORT } from '@/lib/labels';
 
 interface AnswerDialogProps {
@@ -88,7 +88,7 @@ export function AnswerDialog({ question, citizen, isSelf, text, onAnswer }: Answ
               flexShrink: 0,
               borderRadius: 9999,
               background: P.paper,
-              border: `3px solid ${chitRing(citizen.color)}`,
+              border: `3px solid ${groupRing(citizen.group)}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

@@ -1,13 +1,18 @@
 import { useState } from 'react';
-import type { Citizen } from '@citykiller/shared';
+import type { Citizen, Victim } from '@citykiller/shared';
 import { MOTIVE_DESCRIPTORS } from '@citykiller/shared';
 import { FONT, P, RADIUS, SHADOW } from '@/design/tokens';
-import { chitRing, monogram } from '@/design/city';
+import { groupRing, monogram } from '@/design/city';
+import { GROUP_LABELS, districtName } from '@/lib/labels';
 
 interface AccuseDialogProps {
   open: boolean;
   forced: boolean;
   citizens: Citizen[];
+  /** Все жители партии, включая мёртвых — по ним подписываются жертвы */
+  allCitizens: Citizen[];
+  /** Жертвы по порядку: главная улика против мотива */
+  victims: Victim[];
   /** id 6 мотивов-кандидатов, среди которых один настоящий */
   motiveOptions: string[];
   /** Мотивы, которые детектив вычеркнул по ходу партии */
@@ -26,6 +31,8 @@ export function AccuseDialog({
   open,
   forced,
   citizens,
+  allCitizens,
+  victims,
   motiveOptions,
   crossedMotives,
   journal,
@@ -119,6 +126,80 @@ export function AccuseDialog({
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: 18 }}>
+          <Label text={`ЖЕРТВЫ · ${victims.length}`} />
+          <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+            {victims.map((v, i) => {
+              const c = allCitizens.find(x => x.id === v.citizenId);
+              if (!c) return null;
+              return (
+                <div
+                  key={v.citizenId}
+                  style={{
+                    flex: '1 1 150px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '7px 9px',
+                    borderRadius: 4,
+                    border: '1px solid oklch(0.34 0.05 27)',
+                    background: 'oklch(0.24 0.025 27)'
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 22,
+                      height: 22,
+                      flexShrink: 0,
+                      borderRadius: 9999,
+                      background: P.blood,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontFamily: FONT.mono,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'oklch(0.97 0.03 30)'
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: 'oklch(0.9 0.04 30)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {c.job}
+                    </span>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontFamily: FONT.mono,
+                        fontSize: 11,
+                        color: 'oklch(0.68 0.03 40)',
+                        marginTop: 1
+                      }}
+                    >
+                      {GROUP_LABELS[c.group]} · {districtName(v.districtX, v.districtY)} · ХОД{' '}
+                      {v.turnNumber}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+            {victims.length === 0 && (
+              <p style={{ margin: 0, fontSize: 12.5, color: 'oklch(0.6 0.014 80)' }}>
+                Убийств пока не было.
+              </p>
+            )}
+          </div>
+
           <Label text="КТО УБИЙЦА" />
           <div
             style={{
@@ -153,7 +234,7 @@ export function AccuseDialog({
                       flexShrink: 0,
                       borderRadius: 9999,
                       background: P.paper,
-                      border: `2px solid ${chitRing(c.color)}`,
+                      border: `2px solid ${groupRing(c.group)}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',

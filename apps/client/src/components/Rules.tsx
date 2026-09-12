@@ -7,9 +7,10 @@ import {
 } from '@citykiller/shared';
 import { FONT, P } from '@/design/tokens';
 
-type Section = 'basics' | 'detective' | 'killer' | 'buildings';
+type Section = 'match' | 'basics' | 'detective' | 'killer' | 'buildings';
 
 const SECTIONS: Array<{ id: Section; label: string }> = [
+  { id: 'match', label: 'МАТЧ' },
   { id: 'basics', label: 'ОСНОВЫ' },
   { id: 'detective', label: 'ДЕТЕКТИВ' },
   { id: 'killer', label: 'УБИЙЦА' },
@@ -21,8 +22,10 @@ const SECTIONS: Array<{ id: Section; label: string }> = [
  * ссылку и впервые видит игру), и во время партии — поэтому компонент не знает,
  * где он нарисован, и просто занимает данную ему высоту.
  */
-export function Rules() {
-  const [section, setSection] = useState<Section>('basics');
+export function Rules({ withMatch = false }: { withMatch?: boolean }) {
+  const [section, setSection] = useState<Section>(withMatch ? 'match' : 'basics');
+  // «Как запустить матч» нужно до партии; внутри партии эта вкладка бесполезна
+  const sections = withMatch ? SECTIONS : SECTIONS.filter(s => s.id !== 'match');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -34,7 +37,7 @@ export function Rules() {
           flexShrink: 0
         }}
       >
-        {SECTIONS.map(s => {
+        {sections.map(s => {
           const on = s.id === section;
           return (
             <button
@@ -60,12 +63,60 @@ export function Rules() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 15px 20px' }}>
+        {section === 'match' && <Match />}
         {section === 'basics' && <Basics />}
         {section === 'detective' && <DetectiveRules />}
         {section === 'killer' && <KillerRules />}
         {section === 'buildings' && <Buildings />}
       </div>
     </div>
+  );
+}
+
+function Match() {
+  return (
+    <>
+      <Lead>
+        Играют двое: один за детектива, другой за убийцу. Можно и одному — против бота, он играет
+        за убийцу всерьёз.
+      </Lead>
+
+      <Head>Одному против бота</Head>
+      <Item title="Три шага">
+        Выберите роль «Детектив», режим «Против бота», впишите имя — и нажмите кнопку. Партия
+        начнётся сразу, лобби и кода не нужно.
+      </Item>
+
+      <Head>Вдвоём по сети</Head>
+      <Item title="1 · Оба открывают одну ссылку">
+        Ту самую, по которой вы сейчас читаете эти правила. Пересылать ничего, кроме неё, не надо.
+      </Item>
+      <Item title="2 · Первый создаёт дело">
+        Выбирает роль, режим «По сети», вводит имя, нажимает «Открыть дело». Появится код из
+        нескольких символов — его видно в шапке партии как «ДЕЛО №».
+      </Item>
+      <Item title="3 · Второй входит по коду">
+        Выбирает свободную роль, режим «По коду», вводит имя и полученный код. Партия стартует,
+        как только оба в комнате.
+      </Item>
+      <Item title="Если связь оборвалась">
+        Откройте ссылку заново — вы вернётесь в ту же партию на то же место. Игра живёт на
+        сервере, а не во вкладке браузера.
+      </Item>
+
+      <Head>Мелочи, которые экономят нервы</Head>
+      <Item title="Роли не должны совпадать">
+        Двое детективов в одну партию не поместятся: второй игрок выбирает ту роль, которую не
+        занял первый.
+      </Item>
+      <Item title="Правила под рукой">
+        Во время партии эта же справка открывается кнопкой «ПРАВИЛА» в шапке или клавишей F1.
+      </Item>
+      <Item title="Две вкладки на одном компьютере">
+        Так тоже можно: сессии хранятся отдельно для каждой вкладки, удобно показывать игру
+        вдвоём за одним экраном.
+      </Item>
+    </>
   );
 }
 

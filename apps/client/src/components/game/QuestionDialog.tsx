@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Citizen, QuestionAttribute, QuestionValue } from '@citykiller/shared';
 import { FONT, P, RADIUS, SHADOW } from '@/design/tokens';
-import { chitRing, monogram } from '@/design/city';
+import { groupRing, monogram } from '@/design/city';
 import { ATTRIBUTE_LABELS, ATTRIBUTE_VALUES, GROUP_LABELS, questionText } from '@/lib/labels';
 
 interface QuestionDialogProps {
@@ -100,7 +100,7 @@ export function QuestionDialog({ citizen, viaDiner, onSubmit, onClose }: Questio
               flexShrink: 0,
               borderRadius: 9999,
               background: P.paper,
-              border: `2.5px solid ${chitRing(citizen.color)}`,
+              border: `2.5px solid ${groupRing(citizen.group)}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

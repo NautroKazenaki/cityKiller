@@ -5,7 +5,7 @@ import type {
   PoliceTokenAnswer
 } from '@citykiller/shared';
 import { FONT, P } from '@/design/tokens';
-import { GROUP_CHIT, chitRing, monogram } from '@/design/city';
+import { GROUP_CHIT, groupRing, monogram } from '@/design/city';
 import { ATTRIBUTE_LABELS, valueLabel } from '@/lib/labels';
 
 interface JournalProps {
@@ -122,7 +122,7 @@ export function Journal({ citizens, positions, answers, policeAnswers }: Journal
                         flexShrink: 0,
                         borderRadius: 9999,
                         background: P.paper,
-                        border: `2px solid ${chitRing(r.citizen.color)}`,
+                        border: `2px solid ${groupRing(r.citizen.group)}`,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',

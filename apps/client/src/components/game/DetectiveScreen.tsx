@@ -892,6 +892,8 @@ export function DetectiveScreen({
           const pos = posOf(c.id);
           return pos && !pos.isDead;
         })}
+        allCitizens={view.citizens}
+        victims={view.victims}
         motiveOptions={view.motiveOptions}
         crossedMotives={crossedMotives}
         journal={

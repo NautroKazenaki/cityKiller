@@ -1,4 +1,6 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { MOTIVE_DESCRIPTORS } from '@citykiller/shared';
+import { GROUP_LABELS } from '@/lib/labels';
 import { useGameRoom } from '@/hooks/useGameRoom';
 import { DetectiveScreen } from '@/components/game/DetectiveScreen';
 import { KillerScreen } from '@/components/game/KillerScreen';
@@ -64,7 +66,29 @@ export function GamePage() {
   const questions = view.answers.length;
   const tokenAnswers = view.policeAnswers.length;
   const lastVictim = view.victims[view.victims.length - 1];
+
+  // Разгадка: детективу её присылают только в финале, убийца знал её всю партию
+  const reveal = view.role === 'detective' ? view.reveal : view.killer;
+  const killerCitizen = reveal ? view.citizens.find(c => c.id === reveal.citizenId) : undefined;
+  const trueMotive = reveal ? MOTIVE_DESCRIPTORS.find(m => m.id === reveal.motiveId) : undefined;
+
   const finalRows: FinalRow[] = [
+    ...(killerCitizen
+      ? [
+          {
+            label: 'УБИЙЦЕЙ БЫЛ',
+            value: `${killerCitizen.job} · ${GROUP_LABELS[killerCitizen.group]}`,
+            strong: true,
+            tone: 'bad' as const
+          }
+        ]
+      : []),
+    ...(trueMotive
+      ? [{ label: 'МОТИВ', value: `${trueMotive.title} — ${trueMotive.description}`, tone: 'ink' as const }]
+      : []),
+    ...(reveal
+      ? [{ label: 'ЕМУ ПОДЫГРЫВАЛИ', value: GROUP_LABELS[reveal.allyGroup], tone: 'ink' as const }]
+      : []),
     {
       label: 'ЖЕРТВ',
       value: lastVictim

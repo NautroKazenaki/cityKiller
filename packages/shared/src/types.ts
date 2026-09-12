@@ -313,6 +313,11 @@ export interface DetectiveView {
   city: CityState | null;
   winner: PlayerRole | null;
   winReason: string | null;
+  /**
+   * Разгадка: кем был убийца, каков настоящий мотив и кто ему подыгрывал.
+   * Приходит ТОЛЬКО после конца партии — до этого null, иначе игра теряет смысл.
+   */
+  reveal: KillerInfo | null;
   log: GameLogEntry[];
 }
 

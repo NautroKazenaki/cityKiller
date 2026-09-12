@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Citizen } from '@citykiller/shared';
 import { FONT, P, SHADOW } from '@/design/tokens';
-import { GROUP_CHIT, chitRing, monogram } from '@/design/city';
+import { GROUP_CHIT, groupFill, groupRing, monogram } from '@/design/city';
 import { HEIGHT_SHORT } from '@/lib/labels';
 
 /** Ночные метки убийцы: жертва, испуг, собственная личность */
@@ -64,8 +64,9 @@ export function Chit({
   onClick
 }: ChitProps) {
   const [hover, setHover] = useState(false);
-  const size = big ? 52 : 46;
-  const ring = chitRing(citizen.color);
+  // Крупнее прежнего (52/46): на маленьком жетоне подпись группы была нечитаемой
+  const size = big ? 58 : 52;
+  const ring = groupRing(citizen.group);
   const m = marker ? MARKERS[marker] : null;
 
   return (
@@ -87,8 +88,8 @@ export function Chit({
         width: size,
         height: size,
         borderRadius: 9999,
-        background: P.paper,
-        border: `2.5px solid ${ring}`,
+        background: groupFill(citizen.group),
+        border: `3px solid ${ring}`,
         boxShadow: SHADOW.card,
         display: 'flex',
         flexDirection: 'column',
@@ -103,7 +104,7 @@ export function Chit({
       <span
         style={{
           fontFamily: FONT.display,
-          fontSize: big ? 22 : 19,
+          fontSize: big ? 24 : 21,
           fontWeight: 800,
           lineHeight: 0.85,
           color: P.paperInk
@@ -114,10 +115,15 @@ export function Chit({
       <span
         style={{
           fontFamily: FONT.mono,
-          fontSize: 6.5,
-          letterSpacing: '0.06em',
-          color: 'oklch(0.46 0.02 60)',
-          marginTop: 1
+          fontSize: 9,
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+          color: 'oklch(0.32 0.03 60)',
+          marginTop: 2,
+          maxWidth: size - 8,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
         }}
       >
         {GROUP_CHIT[citizen.group]}

@@ -498,7 +498,7 @@ export function MenuPage() {
 
           {panel === 'rules' && (
             <div style={{ flex: 1, minHeight: 0 }}>
-              <Rules />
+              <Rules withMatch />
             </div>
           )}
 

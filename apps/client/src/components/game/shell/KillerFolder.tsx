@@ -1,6 +1,6 @@
 import type { Citizen, CitizenGroup } from '@citykiller/shared';
 import { FONT, P, RADIUS, SHADOW } from '@/design/tokens';
-import { chitRing, monogram } from '@/design/city';
+import { groupRing, monogram } from '@/design/city';
 import { GROUP_LABELS, HEIGHT_SHORT } from '@/lib/labels';
 import { Icon } from '../sheet/Icon';
 
@@ -100,7 +100,7 @@ export function KillerFolder({
             flexShrink: 0,
             borderRadius: 9999,
             background: P.paper,
-            border: `3.5px solid ${chitRing(killerCitizen.color)}`,
+            border: `3.5px solid ${groupRing(killerCitizen.group)}`,
             boxShadow: `0 0 0 2px ${P.gold}, 0 3px 0 rgba(0,0,0,.3)`,
             display: 'flex',
             alignItems: 'center',

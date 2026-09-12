@@ -1,7 +1,7 @@
 import type { Citizen, CitizenPosition } from '@citykiller/shared';
 import { MAX_CITIZENS_PER_DISTRICT } from '@citykiller/shared';
 import { FONT, P, RADIUS, SHADOW } from '@/design/tokens';
-import { chitRing, districtTitle, monogram } from '@/design/city';
+import { groupRing, districtTitle, monogram } from '@/design/city';
 import { GROUP_LABELS, HEIGHT_SHORT, districtName } from '@/lib/labels';
 import { ActionRow, type ActionSpec } from './ActionRow';
 
@@ -158,7 +158,7 @@ export function CaseFolder({
                     flexShrink: 0,
                     borderRadius: 9999,
                     background: P.paper,
-                    border: `2.5px solid ${chitRing(c.citizen.color)}`,
+                    border: `2.5px solid ${groupRing(c.citizen.group)}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'

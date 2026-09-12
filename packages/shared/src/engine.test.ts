@@ -944,6 +944,27 @@ describe('виды состояния', () => {
     expect(json).not.toContain('"truth"');
   });
 
+  it('разгадка приходит детективу только после финала', () => {
+    const state = newGameInDay();
+    expect(viewForDetective(state).reveal).toBeNull();
+
+    const killerJob = state.citizens.find(c => c.id === state.killer.citizenId)!.job;
+    const finished = applyCommand(state, 'detective', {
+      type: 'detective:accuse',
+      job: killerJob,
+      motiveId: 'заведомо неверный мотив'
+    });
+    expect(finished.ok).toBe(true);
+    if (!finished.ok) return;
+
+    // проиграв, детектив всё равно обязан узнать, кто это был и почему
+    const reveal = viewForDetective(finished.state).reveal;
+    expect(reveal).not.toBeNull();
+    expect(reveal!.citizenId).toBe(state.killer.citizenId);
+    expect(reveal!.motiveId).toBe(state.killer.motiveId);
+    expect(reveal!.allyGroup).toBe(state.killer.allyGroup);
+  });
+
   it('убийца видит свою личность и валидные цели ночью', () => {
     let state = createGame('g8');
     state = mustApply(state, 'detective', { type: 'detective:placeCar', x: 0, y: 0 });
