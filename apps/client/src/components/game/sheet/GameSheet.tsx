@@ -3,6 +3,7 @@ import type { Building, Citizen, CitizenPosition, PoliceToken, Victim } from '@c
 import { KILLS_TO_WIN } from '@citykiller/shared';
 import { FONT, LAYOUT, P, SHADOW } from '@/design/tokens';
 import { generateCityIn, seedFromId } from '@/design/cityArt';
+import { GROUP_CHIT, groupRing } from '@/design/city';
 import { HEIGHT_SHORT } from '@/lib/labels';
 import { DistrictCell } from './DistrictCell';
 import { DetectiveCar } from './DetectiveCar';
@@ -374,9 +375,8 @@ export function GameSheet({
                         top: 0,
                         left: 0,
                         right: 0,
-                        height: 4,
-                        background:
-                          'repeating-linear-gradient(90deg, oklch(0.58 0.16 27) 0 6px, transparent 6px 12px)'
+                        height: 5,
+                        background: groupRing(citizen.group)
                       }}
                     />
                   )}
@@ -407,7 +407,20 @@ export function GameSheet({
                       <span
                         style={{
                           fontFamily: FONT.mono,
-                          fontSize: 7.5,
+                          fontSize: 8.5,
+                          fontWeight: 600,
+                          letterSpacing: '0.04em',
+                          color: 'oklch(0.34 0.03 45)',
+                          textAlign: 'center',
+                          lineHeight: 1.2
+                        }}
+                      >
+                        {GROUP_CHIT[citizen.group]}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: FONT.mono,
+                          fontSize: 8,
                           color: 'oklch(0.45 0.03 45)',
                           textAlign: 'center',
                           lineHeight: 1.2
@@ -415,6 +428,27 @@ export function GameSheet({
                       >
                         {citizen.sex === 'male' ? 'М' : 'Ж'} · {citizen.age} · {citizen.size} ·{' '}
                         {HEIGHT_SHORT[citizen.height]}
+                      </span>
+                      {/* был ли запуган — прямая улика против мотива «садист» */}
+                      <span
+                        style={{
+                          fontFamily: FONT.mono,
+                          fontSize: 8,
+                          letterSpacing: '0.08em',
+                          padding: '1px 5px',
+                          borderRadius: 2,
+                          background: victim!.wasScared
+                            ? 'oklch(0.62 0.13 300 / .3)'
+                            : 'transparent',
+                          border: victim!.wasScared
+                            ? '1px solid oklch(0.5 0.12 300)'
+                            : '1px solid oklch(0.6 0.02 55 / .5)',
+                          color: victim!.wasScared
+                            ? 'oklch(0.34 0.12 300)'
+                            : 'oklch(0.5 0.02 55)'
+                        }}
+                      >
+                        {victim!.wasScared ? 'ЗАПУГАН' : 'НЕ ЗАПУГАН'}
                       </span>
                     </>
                   )}

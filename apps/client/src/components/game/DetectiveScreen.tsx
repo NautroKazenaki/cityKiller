@@ -317,6 +317,9 @@ export function DetectiveScreen({
     if (p.isScared) {
       return { citizen, position: p, state: 'ЗАПУГАН', tone: 'danger' };
     }
+    if (view.turn.questionedCitizenIds.includes(p.citizenId)) {
+      return { citizen, position: p, state: 'УЖЕ СПРОСИЛИ', tone: 'quiet' };
+    }
     if (carHere && canAct && view.turn.abilitiesLeft > 0) {
       return { citizen, position: p, state: 'МОЖНО СПРОСИТЬ', tone: 'ok' };
     }
@@ -458,17 +461,21 @@ export function DetectiveScreen({
       (view.turn.questionedDistrict.x !== selected.x || view.turn.questionedDistrict.y !== selected.y);
     askable.forEach(p => {
       const citizen = citizenById(p.citizenId);
-      const available = carHere && canAct && view.turn.abilitiesLeft > 0 && !wrongDistrict;
+      const alreadyAsked = view.turn.questionedCitizenIds.includes(p.citizenId);
+      const available =
+        carHere && canAct && view.turn.abilitiesLeft > 0 && !wrongDistrict && !alreadyAsked;
       list.push({
         id: `ask-${p.citizenId}`,
         title: `Спросить: ${citizen.job}`,
         desc: !carHere
           ? 'Машина не в этом районе'
-          : wrongDistrict
-            ? 'В этот ход уже допрашивали другой район'
-            : view.turn.abilitiesLeft <= 0
-              ? 'Возможности на этот ход закончились'
-              : 'Возможность · 4 признака на выбор',
+          : alreadyAsked
+            ? 'Уже допрошен в этот ход — только через закусочную'
+            : wrongDistrict
+              ? 'В этот ход уже допрашивали другой район'
+              : view.turn.abilitiesLeft <= 0
+                ? 'Возможности на этот ход закончились'
+                : 'Возможность · 4 признака на выбор',
         icon: 'ask',
         tone: available ? 'plain' : 'disabled',
         onClick: () => setQuestionTarget({ citizenId: p.citizenId, viaDiner: false })
@@ -781,6 +788,39 @@ export function DetectiveScreen({
                 <div style={{ marginTop: 10, display: 'flex', gap: 7 }}>
                   <PrimaryButton label="Применить" onClick={submitFire} />
                   <DangerButton label="Отмена" onClick={resetModes} width={120} />
+                </div>
+              )}
+
+              {/* фаза Города: замена пустого жетона. Без этих кнопок ход детектива
+                  заходил в тупик — двигать некого, а сменить группу нечем */}
+              {isCityMyTurn && view.city?.emptyGroupNotice && (
+                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {(Object.keys(GROUP_LABELS) as CitizenGroup[])
+                    .filter(
+                      g =>
+                        g !== view.city!.emptyGroupNotice &&
+                        view.citizens.some(c => c.group === g && !posOf(c.id)?.isDead)
+                    )
+                    .map(g => (
+                      <button
+                        key={g}
+                        onClick={() => void sendCommand({ type: 'city:chooseGroup', group: g })}
+                        style={{
+                          height: 30,
+                          padding: '0 10px',
+                          borderRadius: 3,
+                          border: '1px solid oklch(0.36 0.015 55)',
+                          background: 'oklch(0.26 0.014 55)',
+                          color: 'oklch(0.9 0.012 80)',
+                          fontFamily: FONT.mono,
+                          fontSize: 10,
+                          letterSpacing: '0.1em',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {GROUP_LABELS[g].toUpperCase()}
+                      </button>
+                    ))}
                 </div>
               )}
             </CaseFolder>

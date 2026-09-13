@@ -124,6 +124,12 @@ export interface DetectiveTurn {
   abilitiesLeft: number;
   /** Район, в котором уже задавали обычный вопрос в этот ход (нельзя спрашивать в двух разных) */
   questionedDistrict: { x: number; y: number } | null;
+  /**
+   * Кого уже допрашивали обычным допросом в этот ход — дважды за ход одного
+   * жителя спрашивать нельзя. Закусочная в этот список не входит и им не
+   * ограничена: это единственный способ вернуться к уже опрошенному.
+   */
+  questionedCitizenIds: number[];
   /** Здания, уже активированные в этот ход */
   usedBuildingIds: string[];
 }
@@ -145,6 +151,12 @@ export interface Victim {
   districtX: number;
   districtY: number;
   turnNumber: number;
+  /**
+   * Был ли житель запуган в момент убийства. Смерть снимает испуг, поэтому
+   * без этой отметки факт исчезал — а он прямо указывает на мотив
+   * (садист запуганных не трогает).
+   */
+  wasScared: boolean;
 }
 
 export interface GameLogEntry {

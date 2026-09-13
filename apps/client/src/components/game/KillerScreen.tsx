@@ -36,7 +36,9 @@ export function KillerScreen({
   onMenu
 }: KillerScreenProps) {
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [nightMode, setNightMode] = useState<NightMode>('kill');
+  // Ночь начинается с испуга: так же пронумерованы шаги в панели, и так честнее —
+  // пугать, зная будущую жертву, проще, чем выбирать жертву вслепую
+  const [nightMode, setNightMode] = useState<NightMode>('scare');
 
   // F1 — справка, как и у детектива
   useEffect(() => {
@@ -59,6 +61,15 @@ export function KillerScreen({
   const killerCitizen = view.citizens.find(c => c.id === view.killer.citizenId)!;
   const killerPosition = view.positions.find(p => p.citizenId === view.killer.citizenId);
   const motive = MOTIVE_DESCRIPTORS.find(m => m.id === view.killer.motiveId);
+  // те же шесть версий, что видит детектив, со своей помеченной
+  const motiveCandidates = MOTIVE_DESCRIPTORS.filter(m => view.motiveOptions.includes(m.id)).map(
+    m => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      mine: m.id === view.killer.motiveId
+    })
+  );
   const citizenById = (id: number) => view.citizens.find(c => c.id === id)!;
   const posOf = (id: number) => view.positions.find(p => p.citizenId === id);
 
@@ -69,7 +80,7 @@ export function KillerScreen({
     setKillTarget(null);
     setScareTargets([]);
     setDeclineChosen(false);
-    setNightMode('kill');
+    setNightMode('scare');
     setCityMoves({});
     setCitySelected(null);
   }, [view.phase, view.turnNumber]);
@@ -129,7 +140,10 @@ export function KillerScreen({
       setScareTargets(prev => {
         if (prev.includes(citizenId)) return prev.filter(id => id !== citizenId);
         if (prev.length >= SCARES_PER_NIGHT) return prev;
-        return [...prev, citizenId];
+        const next = [...prev, citizenId];
+        // испуг набран — сразу переводим на шаг 2, лишний клик по вкладке не нужен
+        if (next.length === requiredScares) setNightMode('kill');
+        return next;
       });
     }
   };
@@ -154,7 +168,7 @@ export function KillerScreen({
       setKillTarget(null);
       setScareTargets([]);
       setDeclineChosen(false);
-      setNightMode('kill');
+      setNightMode('scare');
     }
   };
 
@@ -375,6 +389,7 @@ export function KillerScreen({
               scared={!!killerPosition?.isScared}
               motiveTitle={motive?.title ?? ''}
               motiveDescription={motive?.description ?? ''}
+              motiveCandidates={motiveCandidates}
               allyGroup={view.killer.allyGroup}
               phaseBadge={phaseBadge}
               stepsTitle={stepsTitle}
@@ -386,10 +401,13 @@ export function KillerScreen({
                   <div style={{ display: 'flex', gap: 7 }}>
                     {(
                       [
-                        { key: 'kill' as const, label: `ЖЕРТВА${killTarget !== null ? ' ✓' : ''}` },
                         {
                           key: 'scare' as const,
-                          label: `ИСПУГ ${scareTargets.length}/${requiredScares}`
+                          label: `1 · ИСПУГ ${scareTargets.length}/${requiredScares}`
+                        },
+                        {
+                          key: 'kill' as const,
+                          label: `2 · ЖЕРТВА${killTarget !== null ? ' ✓' : ''}`
                         }
                       ]
                     ).map(t => {

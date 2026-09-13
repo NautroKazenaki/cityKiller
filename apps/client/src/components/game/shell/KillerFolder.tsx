@@ -16,6 +16,8 @@ interface KillerFolderProps {
   scared: boolean;
   motiveTitle: string;
   motiveDescription: string;
+  /** Все кандидаты, среди которых детектив ищет настоящий мотив */
+  motiveCandidates: Array<{ id: string; title: string; description: string; mine: boolean }>;
   allyGroup: CitizenGroup;
   /** Бейдж справа в шапке: «НОЧЬ 3», «ДЕНЬ 3» и т.п. */
   phaseBadge: string;
@@ -30,6 +32,7 @@ export function KillerFolder({
   scared,
   motiveTitle,
   motiveDescription,
+  motiveCandidates,
   allyGroup,
   phaseBadge,
   stepsTitle,
@@ -189,6 +192,63 @@ export function KillerFolder({
             <p style={{ margin: '5px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'oklch(0.78 0.03 30)' }}>
               {motiveDescription}
             </p>
+          </div>
+        </div>
+
+        {/* Версии детектива. Убийце это нужно не меньше, чем детективу: зная,
+            среди чего его ищут, он выбирает убийства, не вычёркивающие мотивы */}
+        <div>
+          <div
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 9.5,
+              letterSpacing: '0.22em',
+              color: 'oklch(0.6 0.014 80)',
+              marginBottom: 6
+            }}
+          >
+            ВЕРСИИ ДЕТЕКТИВА · СРЕДИ НИХ ИЩУТ ВАС
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {motiveCandidates.map(m => (
+              <div
+                key={m.id}
+                title={m.description}
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 8,
+                  padding: '6px 9px',
+                  borderRadius: 3,
+                  border: `1px solid ${m.mine ? 'oklch(0.42 0.09 27)' : 'oklch(0.3 0.014 55)'}`,
+                  background: m.mine ? 'oklch(0.26 0.04 27 / .45)' : 'oklch(0.23 0.012 55)'
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: FONT.display,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    lineHeight: 1,
+                    flexShrink: 0,
+                    color: m.mine ? 'oklch(0.85 0.11 30)' : 'oklch(0.7 0.012 80)'
+                  }}
+                >
+                  {m.title}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    lineHeight: 1.35,
+                    minWidth: 0,
+                    color: m.mine ? 'oklch(0.76 0.04 30)' : 'oklch(0.55 0.012 80)'
+                  }}
+                >
+                  {m.mine ? 'ваш мотив' : m.description}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 

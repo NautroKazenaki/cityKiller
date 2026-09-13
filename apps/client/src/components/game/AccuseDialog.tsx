@@ -188,6 +188,9 @@ export function AccuseDialog({
                     >
                       {GROUP_LABELS[c.group]} · {districtName(v.districtX, v.districtY)} · ХОД{' '}
                       {v.turnNumber}
+                      {v.wasScared && (
+                        <span style={{ color: 'oklch(0.78 0.1 300)' }}> · БЫЛ ЗАПУГАН</span>
+                      )}
                     </span>
                   </span>
                 </div>

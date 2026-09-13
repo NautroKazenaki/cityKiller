@@ -470,7 +470,8 @@ describe('мотивы', () => {
       citizenId: firstVictim.id,
       districtX: pos.districtX,
       districtY: pos.districtY,
-      turnNumber: 1
+      turnNumber: 1,
+      wasScared: false
     });
     state.killsCount = 1;
 
@@ -495,7 +496,8 @@ describe('мотивы', () => {
       citizenId: firstVictim.id,
       districtX: pos.districtX,
       districtY: pos.districtY,
-      turnNumber: 1
+      turnNumber: 1,
+      wasScared: false
     });
     state.killsCount = 1;
 
@@ -550,7 +552,8 @@ describe('мотивы', () => {
         citizenId: c.id,
         districtX: pos.districtX,
         districtY: pos.districtY,
-        turnNumber: 1
+        turnNumber: 1,
+      wasScared: false
       });
       ages.push(c.age);
       if (ages.length === 2) break;
@@ -588,7 +591,8 @@ describe('мотивы', () => {
         citizenId: v.id,
         districtX: pos.districtX,
         districtY: pos.districtY,
-        turnNumber: 1
+        turnNumber: 1,
+      wasScared: false
       });
     }
     state.killsCount = 4;
@@ -929,6 +933,113 @@ describe('расселение: исключение для заполненны
     const moves = stranded.map(p => ({ citizenId: p.citizenId, toX: far.x, toY: far.y }));
     const result = applyCommand(state, 'detective', { type: 'detective:relocate', moves });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('повторный допрос', () => {
+  /** Доводит партию до дня и ставит машину к живому жителю */
+  function dayWithNeighbour(): { state: GameState; citizenId: number } | null {
+    const state = newGameInDay();
+    const car = state.detective!;
+    const here = state.positions.find(
+      p => !p.isDead && !p.isScared && p.districtX === car.x && p.districtY === car.y
+    );
+    return here ? { state, citizenId: here.citizenId } : null;
+  }
+
+  it('одного жителя нельзя спросить дважды за ход', () => {
+    const prepared = dayWithNeighbour();
+    if (!prepared) return;
+    let { state } = prepared;
+    const { citizenId } = prepared;
+
+    const first = applyCommand(state, 'detective', {
+      type: 'detective:question',
+      citizenId,
+      attribute: 'sex',
+      value: 'male'
+    });
+    expect(first.ok, first.ok ? '' : first.error).toBe(true);
+    if (!first.ok) return;
+    state = first.state;
+
+    // отвечаем, чтобы освободить pendingQuestion
+    const answered = applyCommand(state, 'killer', {
+      type: 'killer:answer',
+      questionId: state.pendingQuestion!.id,
+      answer: state.pendingQuestion!.truth
+    });
+    expect(answered.ok).toBe(true);
+    if (!answered.ok) return;
+    state = answered.state;
+
+    // второе действие хода на того же жителя — запрещено
+    const second = applyCommand(state, 'detective', {
+      type: 'detective:question',
+      citizenId,
+      attribute: 'age',
+      value: 40
+    });
+    expect(second.ok).toBe(false);
+  });
+
+  it('запрет снимается со следующим ходом', () => {
+    const prepared = dayWithNeighbour();
+    if (!prepared) return;
+    let { state } = prepared;
+    const { citizenId } = prepared;
+
+    state = mustApply(state, 'detective', {
+      type: 'detective:question',
+      citizenId,
+      attribute: 'sex',
+      value: 'male'
+    });
+    state = mustApply(state, 'killer', {
+      type: 'killer:answer',
+      questionId: state.pendingQuestion!.id,
+      answer: state.pendingQuestion!.truth
+    });
+    expect(state.turn.questionedCitizenIds).toContain(citizenId);
+
+    state = mustApply(state, 'detective', { type: 'detective:endTurn' });
+    expect(state.turn.questionedCitizenIds).not.toContain(citizenId);
+  });
+});
+
+describe('фаза Города: пустой жетон', () => {
+  /** Группа, которой вообще нет среди 20 жителей — именно такой жетон вешал партию */
+  function missingGroup(state: GameState) {
+    return state.cityTokenPool.find(g => !state.citizens.some(c => c.group === g));
+  }
+
+  it('обе стороны могут заменить пустой жетон, а не застревают', () => {
+    for (const stage of ['killer', 'detective'] as const) {
+      let found = false;
+      for (let i = 0; i < 25 && !found; i++) {
+        const state = createGame(`empty-${stage}-${i}`);
+        const empty = missingGroup(state);
+        if (!empty) continue;
+        found = true;
+
+        state.phase = 'city';
+        state.city = { stage, group: empty, emptyGroupNotice: empty };
+
+        const replacement = state.citizens[0].group;
+        const role = stage === 'killer' ? 'killer' : 'detective';
+        const result = applyCommand(state, role, {
+          type: 'city:chooseGroup',
+          group: replacement
+        });
+        expect(result.ok, result.ok ? '' : result.error).toBe(true);
+        if (!result.ok) return;
+        expect(result.state.city?.group).toBe(replacement);
+        expect(result.state.city?.emptyGroupNotice).toBeNull();
+        // пустой жетон уходит из пула навсегда — второй раз партия об него не споткнётся
+        expect(result.state.cityTokenPool).not.toContain(empty);
+      }
+      expect(found).toBe(true);
+    }
   });
 });
 

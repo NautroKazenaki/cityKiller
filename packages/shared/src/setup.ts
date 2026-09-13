@@ -154,7 +154,13 @@ export function createGame(id: string): GameState {
     victims: [],
     lastCrimeDistrict: null,
     policeTokens: [],
-    turn: { movesLeft: 2, abilitiesLeft: 2, questionedDistrict: null, usedBuildingIds: [] },
+    turn: {
+      movesLeft: 2,
+      abilitiesLeft: 2,
+      questionedDistrict: null,
+      questionedCitizenIds: [],
+      usedBuildingIds: []
+    },
     lastNight: null,
     pendingQuestion: null,
     answers: [],

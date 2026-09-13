@@ -79,6 +79,7 @@ function resetTurn(state: GameState): void {
     movesLeft: 2,
     abilitiesLeft: 2,
     questionedDistrict: null,
+    questionedCitizenIds: [],
     usedBuildingIds: []
   };
 }
@@ -199,6 +200,7 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
   }
 
   const victimPos = getPosition(state, cmd.killId)!;
+  const victimWasScared = victimPos.isScared;
   victimPos.isDead = true;
   victimPos.isScared = false;
   state.killsCount += 1;
@@ -206,7 +208,8 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
     citizenId: cmd.killId,
     districtX: victimPos.districtX,
     districtY: victimPos.districtY,
-    turnNumber: state.turnNumber
+    turnNumber: state.turnNumber,
+    wasScared: victimWasScared
   });
   state.lastCrimeDistrict = { x: victimPos.districtX, y: victimPos.districtY };
   // Машина детектива перемещается на место преступления
@@ -346,10 +349,14 @@ function applyQuestion(state: GameState, cmd: QuestionCommand): ApplyResult {
   if (state.turn.questionedDistrict && !isSameDistrict(state.turn.questionedDistrict, district)) {
     return fail('Нельзя допрашивать жителей в двух разных районах за один ход');
   }
+  if (state.turn.questionedCitizenIds.includes(cmd.citizenId)) {
+    return fail('Этого жителя уже допрашивали в этот ход — спросить снова можно через закусочную');
+  }
 
   const result = createQuestion(state, cmd.citizenId, cmd.attribute, cmd.value, false);
   if (result.ok) {
     state.turn.questionedDistrict = district;
+    state.turn.questionedCitizenIds.push(cmd.citizenId);
   }
   return result;
 }
