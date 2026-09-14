@@ -21,6 +21,8 @@ export interface DistrictCellProps {
   /** Ночные метки убийцы: жертва, испуг, своя личность */
   markers: Record<number, ChitMarker>;
   night: boolean;
+  /** Показать признаки на всех жетонах */
+  revealTraits?: boolean;
   registerChit?: (citizenId: number, el: HTMLElement | null) => void;
   onDistrictClick?: () => void;
   onCitizenClick?: (citizenId: number) => void;
@@ -45,6 +47,7 @@ export function DistrictCell({
   pendingCitizenIds,
   markers,
   night,
+  revealTraits = false,
   registerChit,
   onDistrictClick,
   onCitizenClick
@@ -197,6 +200,7 @@ export function DistrictCell({
               selectable={selectableCitizenIds.includes(pos.citizenId)}
               pending={pendingCitizenIds.includes(pos.citizenId)}
               marker={markers[pos.citizenId] ?? null}
+              reveal={revealTraits}
               register={el => registerChit?.(pos.citizenId, el)}
               onClick={() => onCitizenClick?.(pos.citizenId)}
             />

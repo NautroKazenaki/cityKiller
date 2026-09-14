@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './index.css';
 import { MenuPage } from './pages/MenuPage';
 import { GamePage } from './pages/GamePage';
+import { ProfilePage } from './pages/ProfilePage';
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />
@@ -29,7 +30,13 @@ const gameRoute = createRoute({
   component: GamePage
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, gameRoute]);
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/profile',
+  component: ProfilePage
+});
+
+const routeTree = rootRoute.addChildren([indexRoute, gameRoute, profileRoute]);
 
 // Hash-история работает и в браузере, и в Electron (file://)
 const router = createRouter({ routeTree, history: createHashHistory() });

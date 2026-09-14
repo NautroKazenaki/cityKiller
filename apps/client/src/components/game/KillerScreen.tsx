@@ -4,6 +4,7 @@ import { MOTIVE_DESCRIPTORS, SCARES_PER_NIGHT } from '@citykiller/shared';
 import { FONT, LAYOUT, P } from '@/design/tokens';
 import { GROUP_LABELS, questionText } from '@/lib/labels';
 import { moveTargets } from '@/lib/moves';
+import { useRevealTraits } from '@/hooks/useRevealTraits';
 import { GameSheet } from './sheet/GameSheet';
 import type { ChitMarker } from './sheet/Chit';
 import { TopBar } from './shell/TopBar';
@@ -37,6 +38,7 @@ export function KillerScreen({
   onMenu
 }: KillerScreenProps) {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const traits = useRevealTraits();
   // Ночь начинается с испуга: так же пронумерованы шаги в панели, и так честнее —
   // пугать, зная будущую жертву, проще, чем выбирать жертву вслепую
   const [nightMode, setNightMode] = useState<NightMode>('scare');
@@ -375,6 +377,8 @@ export function KillerScreen({
         killsCount={view.killsCount}
         onMenu={onMenu}
         onRules={() => setRulesOpen(true)}
+        traitsOn={traits.reveal}
+        onToggleTraits={traits.toggle}
       />
 
       <RulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} />
@@ -417,6 +421,7 @@ export function KillerScreen({
             pendingCitizenIds={Object.keys(cityMoves).map(Number)}
             markers={markers}
             night={isNight}
+            revealTraits={traits.reveal}
             onCitizenClick={handleCitizenClick}
           />
         </div>

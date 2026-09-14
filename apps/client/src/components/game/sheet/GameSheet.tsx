@@ -28,6 +28,8 @@ export interface GameSheetProps {
   markers?: Record<number, ChitMarker>;
   /** Ночь: холодный слой над картой, акцент уходит в кровавый */
   night?: boolean;
+  /** Признаки на всех жетонах сразу (Alt или кнопка в шапке) */
+  revealTraits?: boolean;
   onCitizenClick?: (citizenId: number) => void;
 }
 
@@ -84,6 +86,7 @@ export function GameSheet({
   pendingCitizenIds = [],
   markers = {},
   night = false,
+  revealTraits = false,
   onCitizenClick
 }: GameSheetProps) {
   const art = useMemo(() => generateCityIn(1000, 1000, seedFromId(gameId), 17), [gameId]);
@@ -261,6 +264,7 @@ export function GameSheet({
               pendingCitizenIds={pendingCitizenIds}
               markers={markers}
               night={night}
+              revealTraits={revealTraits}
               registerChit={registerChit}
               onDistrictClick={onDistrictClick ? () => onDistrictClick(x, y) : undefined}
               onCitizenClick={onCitizenClick}

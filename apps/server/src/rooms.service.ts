@@ -16,6 +16,8 @@ export interface PlayerSlot {
   socketId: string | null;
   /** Ботом управляет сервер: он не подключается сокетом и всегда «на месте» */
   isBot?: boolean;
+  /** Аккаунт игрока; нет — гость, партия в статистику не попадёт */
+  userId?: string | null;
 }
 
 export interface Room {
@@ -54,15 +56,24 @@ export class RoomsService implements OnModuleInit {
         room.players.detective = {
           token: stored.detectiveToken,
           username: stored.detectiveName ?? 'Детектив',
-          socketId: null
+          socketId: null,
+          userId: stored.detectiveUserId
         };
       }
       if (stored.killerToken) {
         room.players.killer = {
           token: stored.killerToken,
           username: stored.killerName ?? 'Убийца',
-          socketId: null
+          socketId: null,
+          userId: stored.killerUserId
         };
+      }
+      // слот бота восстанавливаем ботом, иначе после перезапуска сервера партия зависнет
+      if (stored.vsBot) {
+        for (const role of ['detective', 'killer'] as PlayerRole[]) {
+          const slot = room.players[role];
+          if (slot && !slot.userId && slot.username === BOT_NAME[role]) slot.isBot = true;
+        }
       }
       this.rooms.set(room.roomCode, room);
     }
@@ -72,7 +83,8 @@ export class RoomsService implements OnModuleInit {
     username: string,
     role: PlayerRole,
     socketId: string,
-    withBot = false
+    withBot = false,
+    userId: string | null = null
   ): { room: Room; token: string } {
     let roomCode = generateRoomCode();
     while (this.rooms.has(roomCode)) {
@@ -83,7 +95,7 @@ export class RoomsService implements OnModuleInit {
       roomCode,
       state: null,
       players: {
-        [role]: { token, username, socketId }
+        [role]: { token, username, socketId, userId }
       }
     };
 
@@ -115,7 +127,8 @@ export class RoomsService implements OnModuleInit {
   joinRoom(
     roomCode: string,
     username: string,
-    socketId: string
+    socketId: string,
+    userId: string | null = null
   ): { room: Room; token: string; role: PlayerRole } | { error: string } {
     const room = this.rooms.get(roomCode.toUpperCase());
     if (!room) return { error: 'Комната не найдена' };
@@ -127,8 +140,14 @@ export class RoomsService implements OnModuleInit {
         : null;
     if (!freeRole) return { error: 'Комната уже заполнена' };
 
+    // иначе одна учётка набивала бы себе статистику, играя сама с собой
+    const other = room.players[freeRole === 'detective' ? 'killer' : 'detective'];
+    if (userId && other?.userId === userId) {
+      return { error: 'Нельзя играть против самого себя под одним аккаунтом' };
+    }
+
     const token = randomUUID();
-    room.players[freeRole] = { token, username, socketId };
+    room.players[freeRole] = { token, username, socketId, userId };
 
     // Оба игрока на месте — создаём партию
     if (!room.state && room.players.detective && room.players.killer) {
@@ -191,7 +210,10 @@ export class RoomsService implements OnModuleInit {
       detectiveToken: room.players.detective?.token ?? null,
       killerToken: room.players.killer?.token ?? null,
       detectiveName: room.players.detective?.username ?? null,
-      killerName: room.players.killer?.username ?? null
+      killerName: room.players.killer?.username ?? null,
+      detectiveUserId: room.players.detective?.userId ?? null,
+      killerUserId: room.players.killer?.userId ?? null,
+      vsBot: this.botRole(room) !== null
     });
   }
 }

@@ -35,7 +35,11 @@ function targetsAfterKill(state: GameState, victimId: number): number {
     districtX: pos.districtX,
     districtY: pos.districtY,
     turnNumber: next.turnNumber,
-    wasScared: pos.isScared
+    wasScared: pos.isScared,
+    carAt: next.detective ? { ...next.detective } : null,
+    populationAtKill: next.positions.filter(
+      p => !p.isDead && p.districtX === pos.districtX && p.districtY === pos.districtY
+    ).length + 1
   });
   next.lastCrimeDistrict = { x: pos.districtX, y: pos.districtY };
   // после убийства машина детектива уезжает на место преступления

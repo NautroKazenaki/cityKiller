@@ -1,4 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  clearAuth,
+  fetchMe,
+  login as loginRequest,
+  loadAuth,
+  logout as logoutRequest,
+  register as registerRequest,
+  saveAuth,
+  type StoredAuth
+} from '@/lib/auth';
 import { Rules } from '@/components/Rules';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -70,6 +80,60 @@ export function MenuPage() {
   const [panel, setPanel] = useState<'rules' | 'archive'>('rules');
   const [error, setError] = useState<string | null>(null);
 
+  // аккаунт: с ним партии против людей идут в кабинет, а имя в игре — логин
+  const [auth, setAuth] = useState<StoredAuth | null>(() => loadAuth());
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authLogin, setAuthLogin] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+
+  // сохранённый вход мог протухнуть (выход на другом устройстве, новая база)
+  useEffect(() => {
+    if (!auth) return;
+    fetchMe(auth.token).catch(e => {
+      if ((e as { status?: number }).status === 401) {
+        clearAuth();
+        setAuth(null);
+      }
+    });
+    // проверяем один раз при открытии меню
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const submitAuth = async () => {
+    if (!authLogin.trim() || !authPassword) {
+      setAuthError('Введите логин и пароль');
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      const result =
+        authMode === 'login'
+          ? await loginRequest(authLogin.trim(), authPassword)
+          : await registerRequest(authLogin.trim(), authPassword);
+      saveAuth(result);
+      setAuth(result);
+      setAuthOpen(false);
+      setAuthPassword('');
+      setAuthError(null);
+      setError(null);
+    } catch (e) {
+      setAuthError((e as Error).message);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const signOut = () => {
+    if (auth) void logoutRequest(auth.token);
+    clearAuth();
+    setAuth(null);
+  };
+
+  const playerName = auth ? auth.user.login : username.trim();
+
   const history = useQuery({
     queryKey: ['games'],
     queryFn: async (): Promise<HistoryEntry[]> => {
@@ -85,16 +149,26 @@ export function MenuPage() {
       roomCode: ack.roomCode!,
       playerToken: ack.playerToken!,
       role: ack.role ?? fallbackRole,
-      username: username.trim()
+      username: playerName
     });
     void navigate({ to: '/game/$roomCode', params: { roomCode: ack.roomCode! } });
   };
 
+  /** Сервер отверг вход: сбрасываем его, чтобы игрок не думал, что партия считается */
+  const failed = (ack: RoomAck, fallback: string) => {
+    if (ack.error?.includes('войдите заново')) {
+      clearAuth();
+      setAuth(null);
+    }
+    setError(ack.error ?? fallback);
+  };
+
   const openCase = async () => {
-    if (!username.trim()) {
+    if (!playerName) {
       setError('Представьтесь: без имени дело не открыть');
       return;
     }
+    const identity = { username: playerName, authToken: auth?.token };
     if (mode === 'join') {
       if (!joinCode.trim()) {
         setError('Введите код дела');
@@ -102,10 +176,10 @@ export function MenuPage() {
       }
       const ack = await emitWithAck<RoomAck>('room:join', {
         roomCode: joinCode.trim().toUpperCase(),
-        username: username.trim()
+        ...identity
       });
       if (!ack.ok || !ack.roomCode || !ack.playerToken || !ack.role) {
-        setError(ack.error ?? 'Не удалось подключиться');
+        failed(ack, 'Не удалось подключиться');
         return;
       }
       go(ack, role);
@@ -113,15 +187,42 @@ export function MenuPage() {
     }
 
     const ack = await emitWithAck<RoomAck>('room:create', {
-      username: username.trim(),
+      ...identity,
       role,
       withBot: mode === 'bot'
     });
     if (!ack.ok || !ack.roomCode || !ack.playerToken) {
-      setError(ack.error ?? 'Не удалось открыть дело');
+      failed(ack, 'Не удалось открыть дело');
       return;
     }
     go(ack, role);
+  };
+
+  const smallButton = (on = false): React.CSSProperties => ({
+    height: 30,
+    padding: '0 11px',
+    borderRadius: 3,
+    border: `1px solid ${on ? 'oklch(0.48 0.1 76)' : 'oklch(0.32 0.016 55)'}`,
+    background: on ? 'oklch(0.3 0.05 78)' : 'transparent',
+    color: on ? 'oklch(0.92 0.05 82)' : 'oklch(0.72 0.014 80)',
+    fontFamily: FONT.mono,
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    cursor: 'pointer'
+  });
+
+  const fieldStyle: React.CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    height: 42,
+    borderRadius: 4,
+    border: '1px solid oklch(0.32 0.016 55)',
+    background: 'oklch(0.16 0.011 55)',
+    padding: '0 14px',
+    fontSize: 14.5,
+    color: 'oklch(0.9 0.012 80)',
+    fontFamily: FONT.sans,
+    outline: 'none'
   };
 
   return (
@@ -334,27 +435,142 @@ export function MenuPage() {
               })}
             </div>
 
-            <input
-              placeholder="Ваше имя"
-              value={username}
-              onChange={e => {
-                setUsername(e.target.value);
-                setError(null);
-              }}
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                height: 46,
-                borderRadius: 4,
-                border: '1px solid oklch(0.32 0.016 55)',
-                background: 'oklch(0.16 0.011 55)',
-                padding: '0 15px',
-                fontSize: 15,
-                color: 'oklch(0.9 0.012 80)',
-                fontFamily: FONT.sans,
-                outline: 'none'
-              }}
-            />
+            {auth ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  height: 46,
+                  padding: '0 8px 0 15px',
+                  borderRadius: 4,
+                  border: '1px solid oklch(0.4 0.08 78)',
+                  background: 'oklch(0.22 0.03 78 / .5)'
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: FONT.mono, fontSize: 9, letterSpacing: '0.2em', color: 'oklch(0.62 0.014 80)' }}>
+                    ВЫ ВОШЛИ КАК
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 600,
+                      color: P.gold,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {auth.user.login}
+                  </div>
+                </div>
+                <button onClick={() => void navigate({ to: '/profile' })} style={smallButton(true)}>
+                  КАБИНЕТ
+                </button>
+                <button onClick={signOut} style={smallButton()}>
+                  ВЫЙТИ
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  placeholder="Ваше имя"
+                  value={username}
+                  onChange={e => {
+                    setUsername(e.target.value);
+                    setError(null);
+                  }}
+                  style={{ ...fieldStyle, height: 46, fontSize: 15, padding: '0 15px' }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ flex: 1, fontSize: 12, lineHeight: 1.45, color: 'oklch(0.6 0.014 80)' }}>
+                    Гостем статистика не ведётся. Войдите — и партии против людей попадут в кабинет.
+                  </span>
+                  <button onClick={() => setAuthOpen(v => !v)} style={smallButton(authOpen)}>
+                    ВХОД
+                  </button>
+                </div>
+                {authOpen && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      padding: 12,
+                      borderRadius: 4,
+                      border: '1px solid oklch(0.32 0.016 55)',
+                      background: 'oklch(0.19 0.012 55)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => {
+                          setAuthMode('login');
+                          setAuthError(null);
+                        }}
+                        style={{ ...smallButton(authMode === 'login'), flex: 1 }}
+                      >
+                        ВХОД
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAuthMode('register');
+                          setAuthError(null);
+                        }}
+                        style={{ ...smallButton(authMode === 'register'), flex: 1 }}
+                      >
+                        РЕГИСТРАЦИЯ
+                      </button>
+                    </div>
+                    <input
+                      placeholder="Логин"
+                      autoComplete="username"
+                      value={authLogin}
+                      onChange={e => {
+                        setAuthLogin(e.target.value);
+                        setAuthError(null);
+                      }}
+                      style={fieldStyle}
+                    />
+                    <input
+                      placeholder={authMode === 'register' ? 'Пароль · от 6 символов' : 'Пароль'}
+                      type="password"
+                      autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                      value={authPassword}
+                      onChange={e => {
+                        setAuthPassword(e.target.value);
+                        setAuthError(null);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') void submitAuth();
+                      }}
+                      style={fieldStyle}
+                    />
+                    <button
+                      onClick={() => void submitAuth()}
+                      disabled={authBusy}
+                      style={{
+                        height: 40,
+                        borderRadius: 4,
+                        border: '1px solid oklch(0.5 0.1 76)',
+                        background: 'oklch(0.32 0.06 78)',
+                        color: 'oklch(0.94 0.05 82)',
+                        fontFamily: FONT.mono,
+                        fontSize: 11,
+                        letterSpacing: '0.16em',
+                        cursor: authBusy ? 'wait' : 'pointer'
+                      }}
+                    >
+                      {authMode === 'login' ? 'ВОЙТИ' : 'СОЗДАТЬ АККАУНТ'}
+                    </button>
+                    {authError && (
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'oklch(0.85 0.1 30)' }}>{authError}</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
 
             {mode === 'join' && (
               <input
@@ -393,13 +609,12 @@ export function MenuPage() {
               >
                 {role === 'detective'
                   ? 'Убийцу ведёт сервер: он выбирает жертву по своему мотиву, пугает жителей и лжёт на допросах.'
-                  : 'Бот-детектива пока нет — выберите роль детектива или сыграйте по сети.'}
+                  : 'Детектива ведёт сервер: он допрашивает тех, чей ответ сильнее всего сужает круг, сверяет ответы и кладёт жетоны на главных подозреваемых.'}
               </p>
             )}
 
             <button
               onClick={openCase}
-              disabled={mode === 'bot' && role === 'killer'}
               style={{
                 width: '100%',
                 height: 54,

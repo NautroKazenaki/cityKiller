@@ -11,6 +11,30 @@ export interface StoredRoom {
   killerToken: string | null;
   detectiveName: string | null;
   killerName: string | null;
+  /** Аккаунты игроков; null — гость */
+  detectiveUserId: string | null;
+  killerUserId: string | null;
+  /** Партия против бота — в статистику кабинета не идёт */
+  vsBot: boolean;
+}
+
+export interface UserRecord {
+  id: string;
+  login: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
+/** Завершённая партия с участием игрока — сырьё для статистики кабинета */
+export interface UserGameRow {
+  id: string;
+  roomCode: string;
+  state: GameState;
+  detectiveUserId: string | null;
+  killerUserId: string | null;
+  detectiveName: string | null;
+  killerName: string | null;
+  updatedAt: string;
 }
 
 export interface GameHistoryEntry {
@@ -54,14 +78,34 @@ export class PersistenceService implements OnModuleDestroy {
         action_json TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        login TEXT NOT NULL,
+        login_key TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
+
+    // Базы, созданные до аккаунтов: добавляем колонки, старые партии остаются гостевыми
+    const columns = new Set(
+      (this.db.prepare('PRAGMA table_info(games)').all() as Array<{ name: string }>).map(c => c.name)
+    );
+    if (!columns.has('detective_user_id')) this.db.exec('ALTER TABLE games ADD COLUMN detective_user_id TEXT');
+    if (!columns.has('killer_user_id')) this.db.exec('ALTER TABLE games ADD COLUMN killer_user_id TEXT');
+    if (!columns.has('vs_bot')) this.db.exec('ALTER TABLE games ADD COLUMN vs_bot INTEGER NOT NULL DEFAULT 0');
   }
 
   saveRoom(room: StoredRoom): void {
     this.db
       .prepare(
-        `INSERT INTO games (id, room_code, state_json, detective_token, killer_token, detective_name, killer_name, winner, kills_count, turn_number, updated_at)
-         VALUES (@id, @roomCode, @stateJson, @detectiveToken, @killerToken, @detectiveName, @killerName, @winner, @killsCount, @turnNumber, datetime('now'))
+        `INSERT INTO games (id, room_code, state_json, detective_token, killer_token, detective_name, killer_name, winner, kills_count, turn_number, detective_user_id, killer_user_id, vs_bot, updated_at)
+         VALUES (@id, @roomCode, @stateJson, @detectiveToken, @killerToken, @detectiveName, @killerName, @winner, @killsCount, @turnNumber, @detectiveUserId, @killerUserId, @vsBot, datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            state_json = @stateJson,
            detective_token = @detectiveToken,
@@ -71,6 +115,9 @@ export class PersistenceService implements OnModuleDestroy {
            winner = @winner,
            kills_count = @killsCount,
            turn_number = @turnNumber,
+           detective_user_id = @detectiveUserId,
+           killer_user_id = @killerUserId,
+           vs_bot = @vsBot,
            updated_at = datetime('now')`
       )
       .run({
@@ -83,8 +130,86 @@ export class PersistenceService implements OnModuleDestroy {
         killerName: room.killerName,
         winner: room.state.winner,
         killsCount: room.state.killsCount,
-        turnNumber: room.state.turnNumber
+        turnNumber: room.state.turnNumber,
+        detectiveUserId: room.detectiveUserId,
+        killerUserId: room.killerUserId,
+        vsBot: room.vsBot ? 1 : 0
       });
+  }
+
+  // ==== аккаунты ====
+
+  createUser(user: { id: string; login: string; loginKey: string; passwordHash: string }): boolean {
+    try {
+      this.db
+        .prepare('INSERT INTO users (id, login, login_key, password_hash) VALUES (?, ?, ?, ?)')
+        .run(user.id, user.login, user.loginKey, user.passwordHash);
+      return true;
+    } catch {
+      // UNIQUE по login_key: логин занят
+      return false;
+    }
+  }
+
+  findUserByLoginKey(loginKey: string): UserRecord | null {
+    const row = this.db
+      .prepare('SELECT id, login, password_hash, created_at FROM users WHERE login_key = ?')
+      .get(loginKey) as { id: string; login: string; password_hash: string; created_at: string } | undefined;
+    return row
+      ? { id: row.id, login: row.login, passwordHash: row.password_hash, createdAt: row.created_at }
+      : null;
+  }
+
+  createSession(tokenHash: string, userId: string): void {
+    this.db.prepare('INSERT INTO auth_sessions (token_hash, user_id) VALUES (?, ?)').run(tokenHash, userId);
+  }
+
+  findUserBySession(tokenHash: string): UserRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT u.id, u.login, u.password_hash, u.created_at FROM auth_sessions s
+         JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`
+      )
+      .get(tokenHash) as { id: string; login: string; password_hash: string; created_at: string } | undefined;
+    return row
+      ? { id: row.id, login: row.login, passwordHash: row.password_hash, createdAt: row.created_at }
+      : null;
+  }
+
+  deleteSession(tokenHash: string): void {
+    this.db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+  }
+
+  /** Завершённые партии игрока против живых людей, новые сверху */
+  listUserGames(userId: string): UserGameRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, room_code, state_json, detective_user_id, killer_user_id, detective_name, killer_name, updated_at
+         FROM games
+         WHERE (detective_user_id = @userId OR killer_user_id = @userId)
+           AND winner IS NOT NULL AND vs_bot = 0
+         ORDER BY updated_at DESC`
+      )
+      .all({ userId }) as Array<{
+      id: string;
+      room_code: string;
+      state_json: string;
+      detective_user_id: string | null;
+      killer_user_id: string | null;
+      detective_name: string | null;
+      killer_name: string | null;
+      updated_at: string;
+    }>;
+    return rows.map(r => ({
+      id: r.id,
+      roomCode: r.room_code,
+      state: JSON.parse(r.state_json) as GameState,
+      detectiveUserId: r.detective_user_id,
+      killerUserId: r.killer_user_id,
+      detectiveName: r.detective_name,
+      killerName: r.killer_name,
+      updatedAt: r.updated_at
+    }));
   }
 
   logAction(gameId: string, role: string, action: unknown): void {
@@ -96,7 +221,8 @@ export class PersistenceService implements OnModuleDestroy {
   loadUnfinishedRooms(): StoredRoom[] {
     const rows = this.db
       .prepare(
-        `SELECT room_code, state_json, detective_token, killer_token, detective_name, killer_name
+        `SELECT room_code, state_json, detective_token, killer_token, detective_name, killer_name,
+                detective_user_id, killer_user_id, vs_bot
          FROM games WHERE winner IS NULL`
       )
       .all() as Array<{
@@ -106,6 +232,9 @@ export class PersistenceService implements OnModuleDestroy {
       killer_token: string | null;
       detective_name: string | null;
       killer_name: string | null;
+      detective_user_id: string | null;
+      killer_user_id: string | null;
+      vs_bot: number;
     }>;
 
     return rows.map(row => ({
@@ -114,7 +243,10 @@ export class PersistenceService implements OnModuleDestroy {
       detectiveToken: row.detective_token,
       killerToken: row.killer_token,
       detectiveName: row.detective_name,
-      killerName: row.killer_name
+      killerName: row.killer_name,
+      detectiveUserId: row.detective_user_id,
+      killerUserId: row.killer_user_id,
+      vsBot: row.vs_bot === 1
     }));
   }
 

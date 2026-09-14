@@ -17,6 +17,8 @@ interface ChitProps {
   /** Выбран для текущего перемещения */
   pending?: boolean;
   marker?: ChitMarker | null;
+  /** Alt или кнопка «Признаки»: вместо инициала — пол, возраст, телосложение, рост */
+  reveal?: boolean;
   /** Регистрация узла для FLIP-переезда между районами */
   register?: (el: HTMLElement | null) => void;
   onClick?: () => void;
@@ -60,6 +62,7 @@ export function Chit({
   selectable,
   pending = false,
   marker = null,
+  reveal = false,
   register,
   onClick
 }: ChitProps) {
@@ -101,33 +104,66 @@ export function Chit({
         transform: pending ? 'translateY(-3px)' : 'none'
       }}
     >
-      <span
-        style={{
-          fontFamily: FONT.display,
-          fontSize: big ? 24 : 21,
-          fontWeight: 800,
-          lineHeight: 0.85,
-          color: P.paperInk
-        }}
-      >
-        {monogram(citizen.job)}
-      </span>
-      <span
-        style={{
-          fontFamily: FONT.mono,
-          fontSize: 9,
-          fontWeight: 600,
-          letterSpacing: '0.02em',
-          color: 'oklch(0.32 0.03 60)',
-          marginTop: 2,
-          maxWidth: size - 8,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}
-      >
-        {GROUP_CHIT[citizen.group]}
-      </span>
+      {reveal ? (
+        <>
+          <span
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: big ? 13 : 12,
+              fontWeight: 700,
+              lineHeight: 1,
+              color: P.paperInk,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {citizen.sex === 'male' ? '♂' : '♀'}
+            {citizen.age}
+          </span>
+          <span
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 9.5,
+              fontWeight: 600,
+              lineHeight: 1,
+              color: 'oklch(0.3 0.03 60)',
+              marginTop: 3,
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {citizen.size}·{HEIGHT_SHORT[citizen.height].replace('.', '')}
+          </span>
+        </>
+      ) : (
+        <>
+          <span
+            style={{
+              fontFamily: FONT.display,
+              fontSize: big ? 24 : 21,
+              fontWeight: 800,
+              lineHeight: 0.85,
+              color: P.paperInk
+            }}
+          >
+            {monogram(citizen.job)}
+          </span>
+          <span
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+              color: 'oklch(0.32 0.03 60)',
+              marginTop: 2,
+              maxWidth: size - 8,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {GROUP_CHIT[citizen.group]}
+          </span>
+        </>
+      )}
 
       {/* Испуг: штриховка поверх жетона */}
       {scared && (

@@ -12,6 +12,7 @@ import { districtTitle } from '@/design/city';
 import { GROUP_LABELS, districtName } from '@/lib/labels';
 import { EMPTY_FILTER, deduce, type SuspectFilter } from '@/lib/deduction';
 import { moveTargets } from '@/lib/moves';
+import { useRevealTraits } from '@/hooks/useRevealTraits';
 import { GameSheet } from './sheet/GameSheet';
 import { TopBar } from './shell/TopBar';
 import { RulesSheet } from '@/components/RulesSheet';
@@ -59,6 +60,7 @@ export function DetectiveScreen({
   opponentConnected,
   onMenu
 }: DetectiveScreenProps) {
+  const traits = useRevealTraits();
   const [selected, setSelected] = useState<{ x: number; y: number } | null>(null);
   const [tab, setTab] = useState<'place' | 'journal' | 'motives'>('place');
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -733,6 +735,8 @@ export function DetectiveScreen({
         killsCount={view.killsCount}
         onMenu={onMenu}
         onRules={() => setRulesOpen(true)}
+        traitsOn={traits.reveal}
+        onToggleTraits={traits.toggle}
       />
 
       <RulesSheet open={rulesOpen} onClose={() => setRulesOpen(false)} />
@@ -772,6 +776,7 @@ export function DetectiveScreen({
             availableDistricts={availableDistricts}
             selectedDistrict={selected}
             onDistrictClick={handleDistrictClick}
+            revealTraits={traits.reveal}
             selectableCitizenIds={selectableCitizenIds}
             pendingCitizenIds={[
               ...Object.keys(relocAssignments).map(Number),

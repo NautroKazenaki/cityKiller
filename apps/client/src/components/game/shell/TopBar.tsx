@@ -31,6 +31,9 @@ interface TopBarProps {
   killsCount: number;
   onMenu: () => void;
   onRules: () => void;
+  /** Признаки на всех жетонах: включено ли сейчас и переключатель */
+  traitsOn?: boolean;
+  onToggleTraits?: () => void;
 }
 
 /** Фазовая лента вместо бейджа: игрок видит весь круг хода и текущую позицию в нём. */
@@ -40,7 +43,9 @@ export function TopBar({
   turnNumber,
   killsCount,
   onMenu,
-  onRules
+  onRules,
+  traitsOn = false,
+  onToggleTraits
 }: TopBarProps) {
   return (
     <header
@@ -175,6 +180,20 @@ export function TopBar({
       <div style={{ width: 1, height: 24, background: 'oklch(0.29 0.015 55)' }} />
 
       <div style={{ display: 'flex', gap: 6 }}>
+        {onToggleTraits && (
+          <button
+            onClick={onToggleTraits}
+            title="Признаки всех жителей на карте. Удерживайте Alt — или нажмите, чтобы закрепить"
+            style={{
+              ...BAR_BUTTON,
+              border: `1px solid ${traitsOn ? 'oklch(0.5 0.1 76)' : 'oklch(0.3 0.015 55)'}`,
+              background: traitsOn ? 'oklch(0.3 0.05 78)' : 'transparent',
+              color: traitsOn ? 'oklch(0.92 0.05 82)' : 'oklch(0.72 0.014 80)'
+            }}
+          >
+            ПРИЗНАКИ · ALT
+          </button>
+        )}
         <button onClick={onRules} title="Правила · F1" style={BAR_BUTTON}>
           ПРАВИЛА
         </button>

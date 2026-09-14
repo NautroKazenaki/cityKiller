@@ -216,6 +216,8 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
 
   const victimPos = getPosition(state, cmd.killId)!;
   const victimWasScared = victimPos.isScared;
+  const populationAtKill = aliveCitizensIn(state.positions, victimPos.districtX, victimPos.districtY).length;
+  const carAt = state.detective ? { ...state.detective } : null;
   victimPos.isDead = true;
   victimPos.isScared = false;
   state.killsCount += 1;
@@ -224,7 +226,9 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
     districtX: victimPos.districtX,
     districtY: victimPos.districtY,
     turnNumber: state.turnNumber,
-    wasScared: victimWasScared
+    wasScared: victimWasScared,
+    carAt,
+    populationAtKill
   });
   state.lastCrimeDistrict = { x: victimPos.districtX, y: victimPos.districtY };
   // Машина детектива перемещается на место преступления
@@ -509,7 +513,15 @@ function applyPoliceQuestion(state: GameState, cmd: PoliceQuestionCommand): Appl
   state.policeAnswers.push({
     citizenId: cmd.citizenId,
     canKill: answer,
-    turnNumber: state.turnNumber
+    turnNumber: state.turnNumber,
+    context: {
+      districtX: pos.districtX,
+      districtY: pos.districtY,
+      isScared: pos.isScared,
+      carAt: state.detective ? { ...state.detective } : null,
+      population: aliveCitizensIn(state.positions, pos.districtX, pos.districtY).length,
+      victimsCount: state.victims.length
+    }
   });
   state.policeTokens = state.policeTokens.filter(t => t.citizenId !== cmd.citizenId);
   log(

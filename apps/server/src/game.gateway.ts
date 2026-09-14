@@ -6,8 +6,16 @@ import {
   WebSocketGateway,
   WebSocketServer
 } from '@nestjs/websockets';
-import { GameCommand, GameState, PlayerRole, applyCommand, killerBot } from '@citykiller/shared';
+import {
+  GameCommand,
+  GameState,
+  PlayerRole,
+  applyCommand,
+  detectiveBot,
+  killerBot
+} from '@citykiller/shared';
 import { Server, Socket } from 'socket.io';
+import { AuthService } from './auth.service';
 import { PersistenceService } from './persistence.service';
 import { Room, RoomsService } from './rooms.service';
 
@@ -16,11 +24,14 @@ interface CreateRoomDto {
   role: PlayerRole;
   /** Играть против бота: второй слот занимает сервер */
   withBot?: boolean;
+  /** Вход в аккаунт: партия пойдёт в статистику, имя — логин */
+  authToken?: string;
 }
 
 interface JoinRoomDto {
   roomCode: string;
   username: string;
+  authToken?: string;
 }
 
 interface RejoinDto {
@@ -48,8 +59,28 @@ export class GameGateway implements OnGatewayDisconnect {
 
   constructor(
     private readonly rooms: RoomsService,
-    private readonly persistence: PersistenceService
+    private readonly persistence: PersistenceService,
+    private readonly auth: AuthService
   ) {}
+
+  /**
+   * Кто входит в комнату. С токеном — владелец аккаунта, и имя берётся из логина:
+   * иначе под чужим именем можно было бы сыграть партию «за него». Протухший
+   * токен — ошибка, а не тихий вход гостем: игрок думал бы, что партия считается.
+   */
+  private identify(
+    username: string | undefined,
+    authToken: string | undefined
+  ): { username: string; userId: string | null } | { error: string } {
+    if (authToken) {
+      const user = this.auth.userByToken(authToken);
+      if (!user) return { error: 'Вход в аккаунт устарел — войдите заново' };
+      return { username: user.login, userId: user.id };
+    }
+    const name = username?.trim();
+    if (!name) return { error: 'Укажите имя' };
+    return { username: name, userId: null };
+  }
 
   /** Таймеры ходов бота по комнатам — чтобы ходы не наслаивались */
   private readonly botTimers = new Map<string, NodeJS.Timeout>();
@@ -96,14 +127,17 @@ export class GameGateway implements OnGatewayDisconnect {
 
   @SubscribeMessage('room:create')
   handleCreate(@MessageBody() dto: CreateRoomDto, @ConnectedSocket() socket: Socket) {
-    if (!dto?.username || (dto.role !== 'detective' && dto.role !== 'killer')) {
+    if (dto?.role !== 'detective' && dto?.role !== 'killer') {
       return { ok: false as const, error: 'Укажите имя и роль' };
     }
+    const who = this.identify(dto.username, dto.authToken);
+    if ('error' in who) return { ok: false as const, error: who.error };
     const { room, token } = this.rooms.createRoom(
-      dto.username,
+      who.username,
       dto.role,
       socket.id,
-      dto.withBot === true
+      dto.withBot === true,
+      who.userId
     );
     if (room.state) {
       // партия против бота стартует сразу — отдадим состояние и запустим его ход
@@ -122,10 +156,12 @@ export class GameGateway implements OnGatewayDisconnect {
 
   @SubscribeMessage('room:join')
   handleJoin(@MessageBody() dto: JoinRoomDto, @ConnectedSocket() socket: Socket) {
-    if (!dto?.roomCode || !dto?.username) {
+    if (!dto?.roomCode) {
       return { ok: false as const, error: 'Укажите код комнаты и имя' };
     }
-    const result = this.rooms.joinRoom(dto.roomCode, dto.username, socket.id);
+    const who = this.identify(dto.username, dto.authToken);
+    if ('error' in who) return { ok: false as const, error: who.error };
+    const result = this.rooms.joinRoom(dto.roomCode, who.username, socket.id, who.userId);
     if ('error' in result) return { ok: false as const, error: result.error };
 
     this.broadcastRoom(result.room);
@@ -202,6 +238,8 @@ export class GameGateway implements OnGatewayDisconnect {
       }
     }
 
+    if (role === 'detective') return detectiveBot.decideDetective(state);
+
     return null;
   }
 
@@ -209,6 +247,8 @@ export class GameGateway implements OnGatewayDisconnect {
   private botDelay(command: GameCommand): number {
     if (command.type === 'killer:answer') return 900;
     if (command.type === 'killer:night') return 1600;
+    if (command.type === 'detective:accuse') return 1800;
+    if (command.type === 'detective:question' || command.type === 'detective:useBuilding') return 1100;
     return 700;
   }
 
@@ -231,11 +271,14 @@ export class GameGateway implements OnGatewayDisconnect {
       const next = this.botCommand(fresh.state, role);
       if (!next) return;
 
-      const result = applyCommand(fresh.state, role, next);
+      let result = applyCommand(fresh.state, role, next);
       if (!result.ok) {
-        // бот не должен ломать партию: просто пропускаем ход и пишем в лог сервера
         console.warn(`[bot:${role}] ход отклонён: ${result.error}`);
-        return;
+        // детектив не должен повесить партию на своём дне: закрываем ход и идём дальше
+        if (role === 'detective' && fresh.state.phase === 'day' && !fresh.state.pendingQuestion) {
+          result = applyCommand(fresh.state, role, { type: 'detective:endTurn' });
+        }
+        if (!result.ok) return;
       }
 
       fresh.state = result.state;
