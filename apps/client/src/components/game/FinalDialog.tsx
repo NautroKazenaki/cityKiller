@@ -7,8 +7,18 @@ export interface FinalRow {
   tone?: 'ink' | 'good' | 'bad';
 }
 
+/** Строка сверки: что назвал детектив против того, что было на самом деле */
+export interface VerdictRow {
+  label: string;
+  named: string;
+  actual: string;
+  correct: boolean;
+}
+
 interface FinalDialogProps {
   open: boolean;
+  /** Версия детектива против разгадки — есть, только если обвинение предъявляли */
+  verdict?: VerdictRow[];
   /** Исход дела: раскрыто детективом или ушло в висяк. Штамп ставится по делу, а не по игроку. */
   solved: boolean;
   reason: string | null;
@@ -24,12 +34,57 @@ const TONE_FG = {
   bad: 'oklch(0.42 0.15 27)'
 } as const;
 
+function VerdictLine({ row }: { row: VerdictRow }) {
+  return (
+    <>
+      <span
+        style={{
+          fontFamily: FONT.mono,
+          fontSize: 9.5,
+          letterSpacing: '0.18em',
+          color: 'oklch(0.48 0.03 50)'
+        }}
+      >
+        {row.label}
+      </span>
+      <span
+        style={{
+          fontSize: 14,
+          lineHeight: 1.35,
+          fontWeight: 600,
+          color: row.correct ? TONE_FG.good : TONE_FG.bad,
+          textDecoration: row.correct ? 'none' : 'line-through',
+          textDecorationThickness: 1.5
+        }}
+      >
+        {row.named}
+        <span
+          style={{
+            display: 'inline-block',
+            marginLeft: 6,
+            fontFamily: FONT.mono,
+            fontSize: 9,
+            letterSpacing: '0.12em',
+            textDecoration: 'none'
+          }}
+        >
+          {row.correct ? 'ВЕРНО' : 'МИМО'}
+        </span>
+      </span>
+      <span style={{ fontSize: 14, lineHeight: 1.35, fontWeight: 600, color: TONE_FG.ink }}>
+        {row.actual}
+      </span>
+    </>
+  );
+}
+
 /**
  * Финал — печать на деле, а не диалог «Победа/Поражение».
  * Бумажный документ со штампом поверх: единственный светлый объект на затемнённом столе.
  */
 export function FinalDialog({
   open,
+  verdict,
   solved,
   reason,
   roomCode,
@@ -57,7 +112,9 @@ export function FinalDialog({
         style={{
           position: 'relative',
           width: '100%',
-          maxWidth: 460,
+          maxWidth: verdict && verdict.length > 0 ? 580 : 460,
+          maxHeight: 'calc(100vh - 48px)',
+          overflowY: 'auto',
           background: 'oklch(0.91 0.024 84)',
           borderRadius: 2,
           padding: '30px 28px',
@@ -113,6 +170,40 @@ export function FinalDialog({
         </h3>
 
         <div style={{ height: 1, background: 'oklch(0.5 0.03 55 / .4)', margin: '20px 0' }} />
+
+        {/* сверка: версия детектива рядом с разгадкой — видно, где именно ошибка */}
+        {verdict && verdict.length > 0 && (
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '84px 1fr 1fr',
+                columnGap: 12,
+                rowGap: 10,
+                alignItems: 'baseline'
+              }}
+            >
+              <span />
+              {['ВЕРСИЯ ДЕТЕКТИВА', 'НА САМОМ ДЕЛЕ'].map(h => (
+                <span
+                  key={h}
+                  style={{
+                    fontFamily: FONT.mono,
+                    fontSize: 9,
+                    letterSpacing: '0.18em',
+                    color: 'oklch(0.48 0.03 50)'
+                  }}
+                >
+                  {h}
+                </span>
+              ))}
+              {verdict.map(v => (
+                <VerdictLine key={v.label} row={v} />
+              ))}
+            </div>
+            <div style={{ height: 1, background: 'oklch(0.5 0.03 55 / .4)', margin: '20px 0' }} />
+          </>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           {rows.map(r => (

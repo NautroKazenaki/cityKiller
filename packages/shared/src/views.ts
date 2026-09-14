@@ -33,6 +33,7 @@ export function viewForDetective(state: GameState): DetectiveView {
     city: state.city,
     winner: state.winner,
     winReason: state.winReason,
+    accusation: state.accusation ?? null,
     // Разгадку отдаём только когда партия кончилась: до финала это прямая утечка
     reveal: state.phase === 'finished' ? state.killer : null,
     log: state.log
@@ -50,6 +51,9 @@ export function viewForKiller(state: GameState): KillerView {
     positions: state.positions,
     buildings: state.buildings,
     killer: state.killer,
+    allyGroupOptions: state.allyGroupOptions ?? [],
+    // у старых сохранённых партий поля нет — там помощник уже был назначен
+    allyGroupChosen: state.allyGroupChosen !== false,
     motiveOptions: state.motiveOptions,
     validKillTargets: state.phase === 'night' ? getValidKillTargets(state) : [],
     detective: state.detective,
@@ -65,6 +69,7 @@ export function viewForKiller(state: GameState): KillerView {
     city: state.city,
     winner: state.winner,
     winReason: state.winReason,
+    accusation: state.accusation ?? null,
     log: state.log
   };
 }

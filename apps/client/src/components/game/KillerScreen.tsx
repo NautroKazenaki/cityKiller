@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CitizenGroup, GameCommand, KillerView } from '@citykiller/shared';
-import { MOTIVE_DESCRIPTORS, SCARES_PER_NIGHT, getNeighbors } from '@citykiller/shared';
+import { MOTIVE_DESCRIPTORS, SCARES_PER_NIGHT } from '@citykiller/shared';
 import { FONT, LAYOUT, P } from '@/design/tokens';
 import { GROUP_LABELS, questionText } from '@/lib/labels';
+import { moveTargets } from '@/lib/moves';
 import { GameSheet } from './sheet/GameSheet';
 import type { ChitMarker } from './sheet/Chit';
 import { TopBar } from './shell/TopBar';
@@ -75,6 +76,19 @@ export function KillerScreen({
 
   const isNight = view.phase === 'night';
   const isCityMyTurn = view.phase === 'city' && view.city?.stage === 'killer';
+  // помощников выбирают до первой ночи, пока детектив ставит машину
+  const needAlly = !view.allyGroupChosen && (view.phase === 'setup' || view.phase === 'night');
+  const allyChoice = needAlly
+    ? {
+        options: view.allyGroupOptions.map(group => ({
+          group,
+          members: view.citizens.filter(
+            c => c.group === group && c.id !== view.killer.citizenId && !posOf(c.id)?.isDead
+          )
+        })),
+        onChoose: (group: CitizenGroup) => void sendCommand({ type: 'killer:chooseAlly', group })
+      }
+    : null;
 
   useEffect(() => {
     setKillTarget(null);
@@ -107,13 +121,18 @@ export function KillerScreen({
     return nightMode === 'kill' ? view.validKillTargets : scareCandidates;
   }, [view, isNight, nightMode, scareCandidates, isCityMyTurn]);
 
+  // только районы, куда движок действительно пустит: иначе переезд отклонят, а ход встанет
   const availableDistricts = useMemo(() => {
     if (view.phase === 'city' && citySelected !== null) {
-      const pos = posOf(citySelected);
-      return pos ? getNeighbors(pos.districtX, pos.districtY) : [];
+      return moveTargets({
+        positions: view.positions,
+        victims: view.victims,
+        citizenId: citySelected,
+        moves: cityMoves
+      });
     }
     return [];
-  }, [view.phase, view.positions, citySelected]);
+  }, [view.phase, view.positions, view.victims, citySelected, cityMoves]);
 
   /** Ночные метки на жетонах: жертва, испуг, своя личность */
   const markers = useMemo((): Record<number, ChitMarker> => {
@@ -128,7 +147,17 @@ export function KillerScreen({
 
   const handleCitizenClick = (citizenId: number) => {
     if (view.phase === 'city') {
-      setCitySelected(citizenId);
+      // повторный клик по выбранному — отмена: житель остаётся на месте
+      if (citySelected === citizenId) {
+        setCitySelected(null);
+        setCityMoves(prev => {
+          const next = { ...prev };
+          delete next[citizenId];
+          return next;
+        });
+      } else {
+        setCitySelected(citizenId);
+      }
       return;
     }
     if (!isNight) return;
@@ -150,11 +179,13 @@ export function KillerScreen({
 
   const handleDistrictClick = (x: number, y: number) => {
     if (view.phase !== 'city' || citySelected === null) return;
+    if (!availableDistricts.some(d => d.x === x && d.y === y)) return;
     setCityMoves(prev => ({ ...prev, [citySelected]: { x, y } }));
     setCitySelected(null);
   };
 
   const canSubmitNight =
+    !needAlly &&
     scareTargets.length === requiredScares &&
     (killTarget !== null || view.validKillTargets.length === 0 || declineChosen);
 
@@ -191,6 +222,22 @@ export function KillerScreen({
 
   // ==== содержимое панели по фазе ====
   const steps = useMemo((): NightStep[] => {
+    if (needAlly) {
+      return [
+        {
+          n: '1',
+          text: 'Выбрать группу-помощника',
+          state: 'ЖДЁТ',
+          done: false
+        },
+        {
+          n: '2',
+          text: 'Детектив ставит машину',
+          state: view.phase === 'setup' ? 'ЖДЁМ' : 'ГОТОВО',
+          done: view.phase !== 'setup'
+        }
+      ];
+    }
     if (isNight) {
       return [
         {
@@ -256,6 +303,7 @@ export function KillerScreen({
       }
     ];
   }, [
+    needAlly,
     isNight,
     requiredScares,
     scareTargets,
@@ -280,7 +328,9 @@ export function KillerScreen({
               ? 'ОБВИНЕНИЕ'
               : 'РАССТАНОВКА';
 
-  const stepsTitle = isNight
+  const stepsTitle = needAlly
+    ? 'ПОДГОТОВКА К ПЕРВОЙ НОЧИ'
+    : isNight
     ? `НОЧНЫЕ ДЕЛА · ${requiredScares} ИСПУГА, 1 ЖЕРТВА`
     : view.phase === 'city'
       ? 'ФАЗА ГОРОДА'
@@ -391,6 +441,7 @@ export function KillerScreen({
               motiveDescription={motive?.description ?? ''}
               motiveCandidates={motiveCandidates}
               allyGroup={view.killer.allyGroup}
+              allyChoice={allyChoice}
               phaseBadge={phaseBadge}
               stepsTitle={stepsTitle}
               steps={steps}
@@ -533,9 +584,33 @@ export function KillerScreen({
 
             {view.phase === 'city' && isCityMyTurn && !view.city?.emptyGroupNotice && (
               <HintBox>
-                Кликните жителя своей группы, затем соседний район. Можно не двигать никого — жетон
-                всё равно вернётся в стопку.
+                Кликните жителя своей группы, затем подсвеченный район — туда движок пустит. Повторный
+                клик по жителю отменяет его переезд. Можно не двигать никого — жетон всё равно
+                вернётся в стопку.
               </HintBox>
+            )}
+
+            {view.phase === 'city' && isCityMyTurn && Object.keys(cityMoves).length > 0 && (
+              <button
+                onClick={() => {
+                  setCityMoves({});
+                  setCitySelected(null);
+                }}
+                style={{
+                  flexShrink: 0,
+                  height: 34,
+                  borderRadius: 4,
+                  border: '1px solid oklch(0.36 0.015 55)',
+                  background: 'transparent',
+                  color: 'oklch(0.72 0.014 80)',
+                  fontFamily: FONT.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.14em',
+                  cursor: 'pointer'
+                }}
+              >
+                СБРОСИТЬ ПЕРЕМЕЩЕНИЯ
+              </button>
             )}
 
             {actionError && (
@@ -558,7 +633,7 @@ export function KillerScreen({
           <div style={{ flexShrink: 0 }}>
             {isNight ? (
               <KillerButton
-                label="Совершить ночные дела"
+                label={needAlly ? 'Сначала выберите помощников' : 'Совершить ночные дела'}
                 onClick={submitNight}
                 disabled={!canSubmitNight}
               />
@@ -569,7 +644,11 @@ export function KillerScreen({
                 disabled={!isCityMyTurn || !!view.city?.emptyGroupNotice}
               />
             ) : (
-              <KillerButton label="Ход детектива" onClick={() => {}} disabled />
+              <KillerButton
+                label={needAlly ? 'Выберите помощников' : 'Ход детектива'}
+                onClick={() => {}}
+                disabled
+              />
             )}
           </div>
         </div>

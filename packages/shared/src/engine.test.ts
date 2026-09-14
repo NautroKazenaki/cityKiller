@@ -3,11 +3,11 @@ import { aliveCitizensIn, getNeighbors } from './board';
 import { applyCommand, canKillNow, getValidKillTargets } from './engine';
 import { getMotive } from './motives';
 import { createGame } from './setup';
-import { GameState } from './types';
+import { ALL_GROUPS, GameState } from './types';
 import { viewForDetective, viewForKiller } from './views';
 
 function newGameInDay(): GameState {
-  let state = createGame('test');
+  let state = newGame('test');
   state = mustApply(state, 'detective', { type: 'detective:placeCar', x: 1, y: 1 });
   state = doNight(state);
   if (state.phase === 'relocation') {
@@ -20,6 +20,12 @@ function mustApply(state: GameState, role: 'detective' | 'killer', cmd: any): Ga
   const result = applyCommand(state, role, cmd);
   if (!result.ok) throw new Error(`applyCommand failed: ${result.error}`);
   return result.state;
+}
+
+/** Новая партия, в которой убийца уже выбрал группу-помощника (иначе ночь не наступит) */
+function newGame(id: string): GameState {
+  const state = createGame(id);
+  return mustApply(state, 'killer', { type: 'killer:chooseAlly', group: state.allyGroupOptions[0] });
 }
 
 function doNight(state: GameState): GameState {
@@ -75,7 +81,7 @@ function doRelocation(state: GameState): GameState {
 
 describe('createGame', () => {
   it('создаёт 20 жителей, 8 зданий, убийцу с мотивом', () => {
-    const state = createGame('g1');
+    const state = newGame('g1');
     expect(state.citizens).toHaveLength(20);
     expect(state.buildings).toHaveLength(8);
     expect(state.positions).toHaveLength(20);
@@ -86,14 +92,14 @@ describe('createGame', () => {
 
   it('минимум 5 разных соц. групп среди 20 жителей', () => {
     for (let i = 0; i < 20; i++) {
-      const state = createGame('groups-' + i);
+      const state = newGame('groups-' + i);
       const groups = new Set(state.citizens.map(c => c.group));
       expect(groups.size).toBeGreaterThanOrEqual(5);
     }
   });
 
   it('в углах по 2 жителя, максимум 3 в районе', () => {
-    const state = createGame('g2');
+    const state = newGame('g2');
     for (const corner of [
       { x: 0, y: 0 },
       { x: 3, y: 0 },
@@ -105,7 +111,7 @@ describe('createGame', () => {
   });
 
   it('у зданий по 2 каждого типа и не больше одного на район', () => {
-    const state = createGame('g3');
+    const state = newGame('g3');
     const byType = new Map<string, number>();
     const byDistrict = new Set<string>();
     for (const b of state.buildings) {
@@ -120,7 +126,7 @@ describe('createGame', () => {
 
 describe('ночь убийцы', () => {
   it('нельзя убить себя, у машины и против мотива', () => {
-    const state = mustApply(createGame('g4'), 'detective', {
+    const state = mustApply(newGame('g4'), 'detective', {
       type: 'detective:placeCar',
       x: 2,
       y: 2
@@ -141,7 +147,7 @@ describe('ночь убийцы', () => {
   });
 
   it('убийство перемещает машину и запускает расселение или день', () => {
-    let state = mustApply(createGame('g5'), 'detective', {
+    let state = mustApply(newGame('g5'), 'detective', {
       type: 'detective:placeCar',
       x: 1,
       y: 1
@@ -155,7 +161,7 @@ describe('ночь убийцы', () => {
   });
 
   it('нельзя запугать жертву убийства', () => {
-    const state = mustApply(createGame('g6'), 'detective', {
+    const state = mustApply(newGame('g6'), 'detective', {
       type: 'detective:placeCar',
       x: 1,
       y: 1
@@ -171,7 +177,7 @@ describe('ночь убийцы', () => {
   });
 
   it('добровольный отказ от убийства разрешён один раз за игру', () => {
-    const state = mustApply(createGame('decline1'), 'detective', {
+    const state = mustApply(newGame('decline1'), 'detective', {
       type: 'detective:placeCar',
       x: 0,
       y: 0
@@ -195,7 +201,7 @@ describe('ночь убийцы', () => {
   });
 
   it('второй отказ от убийства за игру — автоматическое поражение убийцы', () => {
-    let state = mustApply(createGame('decline2'), 'detective', {
+    let state = mustApply(newGame('decline2'), 'detective', {
       type: 'detective:placeCar',
       x: 0,
       y: 0
@@ -400,7 +406,7 @@ describe('здания', () => {
 
 describe('мотивы', () => {
   function stateWithMotive(motiveId: string): GameState {
-    const state = createGame('m-' + motiveId);
+    const state = newGame('m-' + motiveId);
     state.killer.motiveId = motiveId;
     state.detective = { x: 0, y: 0 };
     return state;
@@ -627,7 +633,7 @@ describe('конец игры', () => {
   });
 
   it('после 5 убийств — фаза обвинения', () => {
-    let state = mustApply(createGame('g7'), 'detective', {
+    let state = mustApply(newGame('g7'), 'detective', {
       type: 'detective:placeCar',
       x: 1,
       y: 1
@@ -883,7 +889,7 @@ describe('лимит раундов', () => {
 
 describe('расселение: исключение для заполненных соседей', () => {
   it('если все соседние районы заполнены, разрешено расселить в любой свободный квартал', () => {
-    let state = mustApply(createGame('reloc-exc'), 'detective', {
+    let state = mustApply(newGame('reloc-exc'), 'detective', {
       type: 'detective:placeCar',
       x: 1,
       y: 1
@@ -1017,7 +1023,7 @@ describe('фаза Города: пустой жетон', () => {
     for (const stage of ['killer', 'detective'] as const) {
       let found = false;
       for (let i = 0; i < 25 && !found; i++) {
-        const state = createGame(`empty-${stage}-${i}`);
+        const state = newGame(`empty-${stage}-${i}`);
         const empty = missingGroup(state);
         if (!empty) continue;
         found = true;
@@ -1040,6 +1046,116 @@ describe('фаза Города: пустой жетон', () => {
       }
       expect(found).toBe(true);
     }
+  });
+});
+
+describe('выбор группы-помощника', () => {
+  it('убийце предлагают три разные группы, и в каждой есть кто-то кроме него', () => {
+    for (let i = 0; i < 20; i++) {
+      const state = createGame('ally-options-' + i);
+      expect(state.allyGroupOptions).toHaveLength(3);
+      expect(new Set(state.allyGroupOptions).size).toBe(3);
+      for (const g of state.allyGroupOptions) {
+        expect(state.citizens.some(c => c.group === g && c.id !== state.killer.citizenId)).toBe(true);
+      }
+      expect(state.allyGroupChosen).toBe(false);
+    }
+  });
+
+  it('без выбора ночь не наступает, выбрать можно только из предложенных и один раз', () => {
+    let state = createGame('ally-flow');
+    state = mustApply(state, 'detective', { type: 'detective:placeCar', x: 1, y: 1 });
+
+    const targets = getValidKillTargets(state);
+    const scares = state.positions
+      .filter(p => !p.isDead && p.citizenId !== targets[0])
+      .slice(0, 2)
+      .map(p => p.citizenId);
+    const early = applyCommand(state, 'killer', {
+      type: 'killer:night',
+      scareIds: scares,
+      killId: targets[0] ?? null
+    });
+    expect(early.ok).toBe(false);
+
+    const notOffered = ALL_GROUPS.find(g => !state.allyGroupOptions.includes(g))!;
+    expect(applyCommand(state, 'killer', { type: 'killer:chooseAlly', group: notOffered }).ok).toBe(false);
+    expect(
+      applyCommand(state, 'detective', { type: 'killer:chooseAlly', group: state.allyGroupOptions[1] }).ok
+    ).toBe(false);
+
+    state = mustApply(state, 'killer', { type: 'killer:chooseAlly', group: state.allyGroupOptions[1] });
+    expect(state.killer.allyGroup).toBe(state.allyGroupOptions[1]);
+    expect(
+      applyCommand(state, 'killer', { type: 'killer:chooseAlly', group: state.allyGroupOptions[2] }).ok
+    ).toBe(false);
+
+    expect(applyCommand(state, 'killer', {
+      type: 'killer:night',
+      scareIds: scares,
+      killId: targets[0] ?? null
+    }).ok).toBe(true);
+  });
+
+  it('детектив не видит ни вариантов, ни выбора, и в логе выбор не упоминается', () => {
+    const before = createGame('ally-secret');
+    const after = mustApply(before, 'killer', {
+      type: 'killer:chooseAlly',
+      group: before.allyGroupOptions[2]
+    });
+    for (const s of [before, after]) {
+      const json = JSON.stringify(viewForDetective(s));
+      expect(json).not.toContain('allyGroup');
+    }
+    expect(after.log).toEqual(before.log);
+  });
+});
+
+describe('после пятого убийства', () => {
+  function accusationWithToken(): { state: GameState; citizenId: number } {
+    const state = newGameInDay();
+    const citizenId = state.positions.find(
+      p => !p.isDead && p.citizenId !== state.killer.citizenId
+    )!.citizenId;
+    state.policeTokens.push({ citizenId, placedTurn: state.turnNumber });
+    state.phase = 'accusation';
+    return { state, citizenId };
+  }
+
+  it('жетон слежки срабатывает до обвинения', () => {
+    const { state, citizenId } = accusationWithToken();
+    const asked = mustApply(state, 'detective', { type: 'detective:policeQuestion', citizenId });
+    expect(asked.phase).toBe('accusation');
+    expect(asked.policeAnswers.at(-1)!.citizenId).toBe(citizenId);
+    expect(asked.policeTokens.some(t => t.citizenId === citizenId)).toBe(false);
+  });
+
+  it('но ездить и допрашивать уже нельзя', () => {
+    const { state } = accusationWithToken();
+    expect(applyCommand(state, 'detective', { type: 'detective:endTurn' }).ok).toBe(false);
+    expect(applyCommand(state, 'detective', { type: 'detective:move', x: 0, y: 0 }).ok).toBe(false);
+  });
+});
+
+describe('обвинение сохраняется для финала', () => {
+  it('в состоянии и в обоих видах — кого назвали и что угадано', () => {
+    const state = newGameInDay();
+    const wrongJob = state.citizens.find(c => c.id !== state.killer.citizenId)!.job;
+    const finished = mustApply(state, 'detective', {
+      type: 'detective:accuse',
+      job: wrongJob,
+      motiveId: state.killer.motiveId
+    });
+    const expected = {
+      job: wrongJob,
+      motiveId: state.killer.motiveId,
+      jobCorrect: false,
+      motiveCorrect: true
+    };
+    expect(finished.accusation).toEqual(expected);
+    expect(viewForDetective(finished).accusation).toEqual(expected);
+    expect(viewForKiller(finished).accusation).toEqual(expected);
+    expect(viewForDetective(state).accusation).toBeNull();
   });
 });
 
@@ -1077,7 +1193,7 @@ describe('виды состояния', () => {
   });
 
   it('убийца видит свою личность и валидные цели ночью', () => {
-    let state = createGame('g8');
+    let state = newGame('g8');
     state = mustApply(state, 'detective', { type: 'detective:placeCar', x: 0, y: 0 });
     const view = viewForKiller(state);
     expect(view.killer.citizenId).toBe(state.killer.citizenId);

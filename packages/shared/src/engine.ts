@@ -15,6 +15,7 @@ import { GROUP_TITLES } from './data/groups';
 import {
   AccuseCommand,
   AnswerCommand,
+  ChooseAllyCommand,
   Citizen,
   CitizenGroup,
   CitizenPosition,
@@ -145,7 +146,21 @@ function applyPlaceCar(state: GameState, cmd: PlaceCarCommand): ApplyResult {
   return { ok: true, state };
 }
 
+function applyChooseAlly(state: GameState, cmd: ChooseAllyCommand): ApplyResult {
+  if (state.allyGroupChosen !== false) return fail('Группа-помощник уже выбрана');
+  if (!state.allyGroupOptions.includes(cmd.group)) {
+    return fail('Эту группу не предлагали — выберите одну из трёх');
+  }
+  state.killer.allyGroup = cmd.group;
+  state.allyGroupChosen = true;
+  // В лог не пишем: общий лог видит детектив, а выбор — секрет убийцы
+  return { ok: true, state };
+}
+
 function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
+  // Старые сохранённые партии поля не имеют (undefined) — для них выбор считается сделанным
+  if (state.allyGroupChosen === false) return fail('Сначала выберите группу-помощника');
+
   // --- Испуг ---
   const scareCandidates = state.positions.filter(
     p => !p.isDead && !p.isScared && p.citizenId !== cmd.killId
@@ -225,7 +240,11 @@ function applyNight(state: GameState, cmd: NightCommand): ApplyResult {
 
   if (state.killsCount >= KILLS_TO_WIN) {
     state.phase = 'accusation';
-    log(state, 'system', 'Пятое убийство! Детектив обязан немедленно назвать профессию убийцы и его мотив.');
+    log(
+      state,
+      'system',
+      'Пятое убийство! Детектив может спросить по оставшимся жетонам слежки, затем обязан назвать профессию убийцы и его мотив.'
+    );
     return { ok: true, state };
   }
 
@@ -652,13 +671,14 @@ function applyAccuse(state: GameState, cmd: AccuseCommand): ApplyResult {
   const jobCorrect = killerCitizen.job === cmd.job;
   const motiveCorrect = state.killer.motiveId === cmd.motiveId;
 
+  state.accusation = { job: cmd.job, motiveId: cmd.motiveId, jobCorrect, motiveCorrect };
   state.phase = 'finished';
   if (jobCorrect && motiveCorrect) {
     state.winner = 'detective';
     state.winReason = `Детектив раскрыл дело: убийца — ${killerCitizen.job}, мотив угадан верно.`;
   } else {
     state.winner = 'killer';
-    const wrongPart = !jobCorrect ? 'профессию' : 'мотив';
+    const wrongPart = !jobCorrect && !motiveCorrect ? 'и профессию, и мотив' : !jobCorrect ? 'профессию' : 'мотив';
     state.winReason = `Детектив ошибся (${wrongPart}). Убийцей был ${killerCitizen.job}. Победа убийцы.`;
   }
   log(state, 'system', state.winReason);
@@ -680,13 +700,21 @@ function checkPermission(state: GameState, role: PlayerRole, cmd: GameCommand): 
     'detective:accuse'
   ];
   if (detectiveOnly.includes(cmd.type) && role !== 'detective') return 'Это действие детектива';
-  if ((cmd.type === 'killer:night' || cmd.type === 'killer:answer') && role !== 'killer') {
+  if (
+    (cmd.type === 'killer:night' || cmd.type === 'killer:answer' || cmd.type === 'killer:chooseAlly') &&
+    role !== 'killer'
+  ) {
     return 'Это действие убийцы';
   }
 
   switch (cmd.type) {
     case 'detective:placeCar':
       return state.phase === 'setup' ? null : 'Машина уже поставлена';
+    case 'killer:chooseAlly':
+      // выбирают, пока детектив ставит машину, или в начале первой ночи
+      return state.phase === 'setup' || state.phase === 'night'
+        ? null
+        : 'Группу-помощника выбирают до первой ночи';
     case 'killer:night':
       return state.phase === 'night' ? null : 'Сейчас не ночь';
     case 'detective:relocate':
@@ -694,9 +722,12 @@ function checkPermission(state: GameState, role: PlayerRole, cmd: GameCommand): 
     case 'detective:move':
     case 'detective:question':
     case 'detective:useBuilding':
-    case 'detective:policeQuestion':
     case 'detective:endTurn':
       return state.phase === 'day' ? null : 'Сейчас не день';
+    case 'detective:policeQuestion':
+      // После пятого убийства партия ещё не кончена: жетоны слежки срабатывают
+      // до вынесения приговора
+      return state.phase === 'day' || state.phase === 'accusation' ? null : 'Сейчас не день';
     case 'killer:answer':
       return state.pendingQuestion ? null : 'Нет вопроса, требующего ответа';
     case 'detective:accuse':
@@ -725,6 +756,8 @@ export function applyCommand(
   switch (cmd.type) {
     case 'detective:placeCar':
       return applyPlaceCar(state, cmd);
+    case 'killer:chooseAlly':
+      return applyChooseAlly(state, cmd);
     case 'killer:night':
       return applyNight(state, cmd);
     case 'detective:relocate':

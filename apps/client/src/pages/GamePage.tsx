@@ -6,7 +6,7 @@ import { DetectiveScreen } from '@/components/game/DetectiveScreen';
 import { KillerScreen } from '@/components/game/KillerScreen';
 import { CenterCard, NoirButton } from '@/components/game/shell/CenterCard';
 import { Lobby } from '@/components/game/shell/Lobby';
-import { FinalDialog, type FinalRow } from '@/components/game/FinalDialog';
+import { FinalDialog, type FinalRow, type VerdictRow } from '@/components/game/FinalDialog';
 
 export function GamePage() {
   const { roomCode } = useParams({ from: '/game/$roomCode' });
@@ -63,8 +63,9 @@ export function GamePage() {
 
   // Итоги для финального документа
   const view = room.view;
-  const questions = view.answers.length;
   const tokenAnswers = view.policeAnswers.length;
+  // вопросы по жетонам — тоже вопросы: раньше в счёт шли только допросы жителей
+  const questions = view.answers.length + tokenAnswers;
   const lastVictim = view.victims[view.victims.length - 1];
 
   // Разгадка: детективу её присылают только в финале, убийца знал её всю партию
@@ -72,8 +73,32 @@ export function GamePage() {
   const killerCitizen = reveal ? view.citizens.find(c => c.id === reveal.citizenId) : undefined;
   const trueMotive = reveal ? MOTIVE_DESCRIPTORS.find(m => m.id === reveal.motiveId) : undefined;
 
+  // Сверка версии детектива с разгадкой: кого и какой мотив назвал — против того, что было
+  const accusation = view.accusation;
+  const namedMotive = accusation
+    ? MOTIVE_DESCRIPTORS.find(m => m.id === accusation.motiveId)
+    : undefined;
+  const verdict: VerdictRow[] =
+    accusation && killerCitizen && trueMotive
+      ? [
+          {
+            label: 'УБИЙЦА',
+            named: accusation.job,
+            actual: `${killerCitizen.job} · ${GROUP_LABELS[killerCitizen.group]}`,
+            correct: accusation.jobCorrect
+          },
+          {
+            label: 'МОТИВ',
+            named: namedMotive?.title ?? accusation.motiveId,
+            actual: trueMotive.title,
+            correct: accusation.motiveCorrect
+          }
+        ]
+      : [];
+
   const finalRows: FinalRow[] = [
-    ...(killerCitizen
+    // при сверке убийца уже назван в ней — не повторяем
+    ...(killerCitizen && verdict.length === 0
       ? [
           {
             label: 'УБИЙЦЕЙ БЫЛ',
@@ -84,7 +109,13 @@ export function GamePage() {
         ]
       : []),
     ...(trueMotive
-      ? [{ label: 'МОТИВ', value: `${trueMotive.title} — ${trueMotive.description}`, tone: 'ink' as const }]
+      ? [
+          {
+            label: verdict.length > 0 ? 'НАСТОЯЩИЙ МОТИВ' : 'МОТИВ',
+            value: `${trueMotive.title} — ${trueMotive.description}`,
+            tone: 'ink' as const
+          }
+        ]
       : []),
     ...(reveal
       ? [{ label: 'ЕМУ ПОДЫГРЫВАЛИ', value: GROUP_LABELS[reveal.allyGroup], tone: 'ink' as const }]
@@ -134,6 +165,7 @@ export function GamePage() {
       )}
       <FinalDialog
         open={room.view.phase === 'finished'}
+        verdict={verdict}
         solved={room.view.winner === 'detective'}
         reason={room.view.winReason}
         roomCode={room.session.roomCode}

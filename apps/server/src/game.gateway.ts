@@ -180,6 +180,11 @@ export class GameGateway implements OnGatewayDisconnect {
     if (state.phase === 'finished') return null;
 
     if (role === 'killer') {
+      // группа-помощник выбирается до первой ночи; у старых сохранений поля нет
+      if (state.allyGroupChosen === false && (state.phase === 'setup' || state.phase === 'night')) {
+        const group = killerBot.chooseAllyGroup(state);
+        return group ? { type: 'killer:chooseAlly', group } : null;
+      }
       if (state.pendingQuestion) {
         return {
           type: 'killer:answer',

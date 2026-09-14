@@ -11,6 +11,7 @@ import {
   Building,
   BuildingType,
   Citizen,
+  CitizenGroup,
   CitizenPosition,
   GameState
 } from './types';
@@ -130,6 +131,20 @@ export function generateBuildings(): Building[] {
   return buildings;
 }
 
+export const ALLY_GROUP_OPTIONS = 3;
+
+/**
+ * Три группы на выбор помощников. Берём только те, у кого в партии есть кто-то
+ * кроме самого убийцы: группа без живых людей — пустой выбор. Если таких меньше
+ * трёх, добираем из остальных.
+ */
+export function pickAllyGroupOptions(citizens: Citizen[], killerId: number): CitizenGroup[] {
+  const present = new Set(citizens.filter(c => c.id !== killerId).map(c => c.group));
+  const preferred = shuffle(ALL_GROUPS.filter(g => present.has(g)));
+  const rest = shuffle(ALL_GROUPS.filter(g => !present.has(g)));
+  return [...preferred, ...rest].slice(0, ALLY_GROUP_OPTIONS);
+}
+
 /** Создание новой партии. Мотив подбирается так, чтобы у убийцы были валидные жертвы на старте. */
 export function createGame(id: string): GameState {
   const citizens = pickGameCitizens();
@@ -137,7 +152,9 @@ export function createGame(id: string): GameState {
   const buildings = generateBuildings();
 
   const killerCitizen = citizens[Math.floor(Math.random() * citizens.length)];
-  const allyGroup = ALL_GROUPS[Math.floor(Math.random() * ALL_GROUPS.length)];
+  const allyGroupOptions = pickAllyGroupOptions(citizens, killerCitizen.id);
+  // заглушка до выбора убийцы: ночь без выбора не наступит, так что ни на что не влияет
+  const allyGroup = allyGroupOptions[0];
 
   const state: GameState = {
     id,
@@ -147,10 +164,13 @@ export function createGame(id: string): GameState {
     positions,
     buildings,
     killer: { citizenId: killerCitizen.id, motiveId: '', allyGroup },
+    allyGroupOptions,
+    allyGroupChosen: false,
     motiveOptions: [],
     detective: null,
     killsCount: 0,
     declinedKillUsed: false,
+    accusation: null,
     victims: [],
     lastCrimeDistrict: null,
     policeTokens: [],

@@ -38,6 +38,7 @@ const neighbors = (x, y) =>
 const aliveIn = (view, x, y) =>
   view.positions.filter(p => p.districtX === x && p.districtY === y && !p.isDead);
 
+await act(kil, joined.playerToken, { type: 'killer:chooseAlly', group: kilView.allyGroupOptions[0] });
 await act(det, created.playerToken, { type: 'detective:placeCar', x: 1, y: 1 });
 
 let questionsAsked = 0;

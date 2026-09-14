@@ -1,14 +1,28 @@
 import { useState } from 'react';
-import type { Citizen, Victim } from '@citykiller/shared';
+import type {
+  Citizen,
+  CitizenPosition,
+  PoliceToken,
+  PoliceTokenAnswer,
+  Victim
+} from '@citykiller/shared';
 import { MOTIVE_DESCRIPTORS } from '@citykiller/shared';
 import { FONT, P, RADIUS, SHADOW } from '@/design/tokens';
-import { groupRing, monogram } from '@/design/city';
-import { GROUP_LABELS, districtName } from '@/lib/labels';
+import { GROUP_CHIT, groupRing, monogram } from '@/design/city';
+import { GROUP_LABELS, HEIGHT_SHORT, districtName } from '@/lib/labels';
 
 interface AccuseDialogProps {
   open: boolean;
   forced: boolean;
   citizens: Citizen[];
+  /** Положение жителей — чтобы видеть, кто запуган */
+  positions: CitizenPosition[];
+  policeTokens: PoliceToken[];
+  policeAnswers: PoliceTokenAnswer[];
+  /** Подозреваемые по журналу и своему фильтру — остальные приглушены */
+  suspectIds: Set<number>;
+  /** Жетоны слежки срабатывают и после пятого убийства — прямо отсюда */
+  onPoliceQuestion: (citizenId: number) => void;
   /** Все жители партии, включая мёртвых — по ним подписываются жертвы */
   allCitizens: Citizen[];
   /** Жертвы по порядку: главная улика против мотива */
@@ -31,6 +45,11 @@ export function AccuseDialog({
   open,
   forced,
   citizens,
+  positions,
+  policeTokens,
+  policeAnswers,
+  suspectIds,
+  onPoliceQuestion,
   allCitizens,
   victims,
   motiveOptions,
@@ -46,6 +65,10 @@ export function AccuseDialog({
   if (!open) return null;
   const motives = MOTIVE_DESCRIPTORS.filter(m => motiveOptions.includes(m.id));
   const ready = !!job && !!motiveId;
+  const posOf = (id: number) => positions.find(p => p.citizenId === id);
+  const liveTokens = policeTokens.filter(t => posOf(t.citizenId) && !posOf(t.citizenId)!.isDead);
+  const jobOf = (id: number) => allCitizens.find(c => c.id === id)?.job ?? `#${id}`;
+  const suspectsAlive = citizens.filter(c => suspectIds.has(c.id)).length;
 
   return (
     <div
@@ -65,7 +88,7 @@ export function AccuseDialog({
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          width: journalOpen ? 1180 : 760,
+          width: journalOpen ? 1320 : 900,
           maxWidth: '100%',
           transition: 'width .2s ease',
           maxHeight: 'calc(100vh - 48px)',
@@ -203,7 +226,75 @@ export function AccuseDialog({
             )}
           </div>
 
-          <Label text="КТО УБИЙЦА" />
+          {/* после пятого убийства партия ещё идёт: жетоны слежки срабатывают до приговора */}
+          {(liveTokens.length > 0 || policeAnswers.length > 0) && (
+            <>
+              <Label text="ЖЕТОНЫ СЛЕЖКИ · ЧЕСТНЫЙ ОТВЕТ ДО ОБВИНЕНИЯ" />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 18 }}>
+                {liveTokens.map(t => (
+                  <div
+                    key={t.citizenId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '7px 9px',
+                      borderRadius: 4,
+                      border: '1px solid oklch(0.4 0.06 250)',
+                      background: 'oklch(0.25 0.03 250 / .5)'
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'oklch(0.9 0.03 250)' }}>
+                      {jobOf(t.citizenId)}
+                    </span>
+                    <button
+                      onClick={() => onPoliceQuestion(t.citizenId)}
+                      style={{
+                        height: 28,
+                        padding: '0 10px',
+                        borderRadius: 3,
+                        border: '1px solid oklch(0.5 0.08 250)',
+                        background: 'oklch(0.32 0.06 250)',
+                        color: 'oklch(0.94 0.04 250)',
+                        fontFamily: FONT.mono,
+                        fontSize: 10,
+                        letterSpacing: '0.1em',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      СПРОСИТЬ: МОЖЕШЬ УБИТЬ ЕГО СЕЙЧАС?
+                    </button>
+                  </div>
+                ))}
+                {[...policeAnswers].reverse().map((a, i) => (
+                  <div
+                    key={`${a.citizenId}-${i}`}
+                    style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, color: 'oklch(0.8 0.012 80)' }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: FONT.mono,
+                        fontSize: 9.5,
+                        letterSpacing: '0.1em',
+                        padding: '2px 6px',
+                        borderRadius: 2,
+                        flexShrink: 0,
+                        background: a.canKill ? 'oklch(0.3 0.06 27)' : 'oklch(0.26 0.04 250 / .7)',
+                        color: a.canKill ? 'oklch(0.85 0.1 30)' : 'oklch(0.88 0.05 250)'
+                      }}
+                    >
+                      {a.canKill ? 'МОГ' : 'НЕ МОГ'}
+                    </span>
+                    Убийца {a.canKill ? 'мог' : 'не мог'} убить жителя {jobOf(a.citizenId)} · ход {a.turnNumber}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <Label
+            text={`КТО УБИЙЦА · ${suspectsAlive} ПОД ПОДОЗРЕНИЕМ ПО ЖУРНАЛУ, ОСТАЛЬНЫЕ ПРИГЛУШЕНЫ`}
+          />
           <div
             style={{
               display: 'grid',
@@ -214,20 +305,24 @@ export function AccuseDialog({
           >
             {citizens.map(c => {
               const on = job === c.job;
+              const scared = !!posOf(c.id)?.isScared;
+              const token = policeTokens.some(t => t.citizenId === c.id);
+              const suspect = suspectIds.has(c.id);
               return (
                 <button
                   key={c.id}
                   onClick={() => setJob(c.job)}
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    alignItems: 'flex-start',
                     gap: 9,
                     padding: '7px 9px',
                     borderRadius: 4,
                     border: `1px solid ${on ? 'oklch(0.5 0.12 27)' : 'oklch(0.33 0.015 55)'}`,
                     background: on ? 'oklch(0.3 0.06 27)' : 'oklch(0.26 0.014 55)',
                     cursor: 'pointer',
-                    textAlign: 'left'
+                    textAlign: 'left',
+                    opacity: on || suspect ? 1 : 0.5
                   }}
                 >
                   <span
@@ -249,17 +344,41 @@ export function AccuseDialog({
                   >
                     {monogram(c.job)}
                   </span>
-                  <span
-                    style={{
-                      fontSize: 12.5,
-                      fontWeight: on ? 600 : 500,
-                      color: on ? 'oklch(0.93 0.05 30)' : 'oklch(0.85 0.012 80)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {c.job}
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: 12.5,
+                        fontWeight: on ? 600 : 500,
+                        color: on ? 'oklch(0.93 0.05 30)' : 'oklch(0.85 0.012 80)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {c.job}
+                    </span>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontFamily: FONT.mono,
+                        fontSize: 10.5,
+                        color: 'oklch(0.68 0.014 80)',
+                        marginTop: 2
+                      }}
+                    >
+                      {c.sex === 'male' ? '♂' : '♀'} {c.age} · {c.size} · {HEIGHT_SHORT[c.height]}
+                    </span>
+                    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                      <Tag
+                        text={GROUP_CHIT[c.group]}
+                        fg="oklch(0.8 0.012 80)"
+                        bd="oklch(0.38 0.015 55)"
+                        dot={groupRing(c.group)}
+                      />
+                      {scared && <Tag text="ЗАПУГАН" fg="oklch(0.84 0.1 300)" bd="oklch(0.5 0.12 300)" />}
+                      {token && <Tag text="ЖЕТОН" fg="oklch(0.88 0.05 250)" bd="oklch(0.48 0.08 250)" />}
+                    </span>
                   </span>
                 </button>
               );
@@ -357,25 +476,25 @@ export function AccuseDialog({
           >
             {journalOpen ? '← СКРЫТЬ ЖУРНАЛ' : 'ЖУРНАЛ →'}
           </button>
-          {!forced && (
-            <button
-              onClick={onClose}
-              style={{
-                width: 130,
-                height: 50,
-                borderRadius: 4,
-                border: '1px solid oklch(0.36 0.015 55)',
-                background: 'transparent',
-                color: 'oklch(0.72 0.014 80)',
-                fontFamily: FONT.mono,
-                fontSize: 11,
-                letterSpacing: '0.14em',
-                cursor: 'pointer'
-              }}
-            >
-              ОТМЕНА
-            </button>
-          )}
+          {/* после пятого убийства отменить обвинение нельзя, но вернуться к карте — можно */}
+          <button
+            onClick={onClose}
+            title={forced ? 'Посмотреть карту — обвинение никуда не денется' : undefined}
+            style={{
+              width: 130,
+              height: 50,
+              borderRadius: 4,
+              border: '1px solid oklch(0.36 0.015 55)',
+              background: 'transparent',
+              color: 'oklch(0.72 0.014 80)',
+              fontFamily: FONT.mono,
+              fontSize: 11,
+              letterSpacing: '0.14em',
+              cursor: 'pointer'
+            }}
+          >
+            {forced ? '← К КАРТЕ' : 'ОТМЕНА'}
+          </button>
           <button
             disabled={!ready}
             onClick={() => ready && onSubmit(job!, motiveId!)}
@@ -402,6 +521,29 @@ export function AccuseDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+function Tag({ text, fg, bd, dot }: { text: string; fg: string; bd: string; dot?: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '1px 5px',
+        borderRadius: 2,
+        border: `1px solid ${bd}`,
+        color: fg,
+        fontFamily: FONT.mono,
+        fontSize: 9.5,
+        letterSpacing: '0.06em',
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {dot && <span style={{ width: 7, height: 7, borderRadius: 9999, background: dot }} />}
+      {text}
+    </span>
   );
 }
 

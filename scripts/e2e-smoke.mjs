@@ -50,6 +50,14 @@ await new Promise(r => setTimeout(r, 300));
 const nightView = killerStates.at(-1);
 console.log('night phase:', nightView.phase, '| valid targets:', nightView.validKillTargets.length);
 
+// Убийца выбирает группу-помощника: без этого ночь не наступит
+const ally = await emit(killer, 'game:action', {
+  roomCode: created.roomCode,
+  playerToken: joined.playerToken,
+  command: { type: 'killer:chooseAlly', group: nightView.allyGroupOptions[0] }
+});
+console.log('chooseAlly:', ally.ok, ally.error ?? '');
+
 // Убийца делает ночь
 const killId = nightView.validKillTargets[0] ?? null;
 const scares = nightView.positions

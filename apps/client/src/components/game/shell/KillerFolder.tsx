@@ -19,6 +19,11 @@ interface KillerFolderProps {
   /** Все кандидаты, среди которых детектив ищет настоящий мотив */
   motiveCandidates: Array<{ id: string; title: string; description: string; mine: boolean }>;
   allyGroup: CitizenGroup;
+  /** Пока помощник не выбран — три варианта вместо готовой группы */
+  allyChoice?: {
+    options: Array<{ group: CitizenGroup; members: Citizen[] }>;
+    onChoose: (group: CitizenGroup) => void;
+  } | null;
   /** Бейдж справа в шапке: «НОЧЬ 3», «ДЕНЬ 3» и т.п. */
   phaseBadge: string;
   stepsTitle: string;
@@ -34,6 +39,7 @@ export function KillerFolder({
   motiveDescription,
   motiveCandidates,
   allyGroup,
+  allyChoice,
   phaseBadge,
   stepsTitle,
   steps,
@@ -253,6 +259,71 @@ export function KillerFolder({
         </div>
 
         {/* группа-помощник */}
+        {allyChoice ? (
+          <div>
+            <div
+              style={{
+                fontFamily: FONT.mono,
+                fontSize: 9.5,
+                letterSpacing: '0.22em',
+                color: P.gold,
+                marginBottom: 4
+              }}
+            >
+              ВЫБЕРИТЕ ГРУППУ-ПОМОЩНИКА · ОДНУ ИЗ ТРЁХ
+            </div>
+            <p style={{ margin: '0 0 8px', fontSize: 11.5, lineHeight: 1.45, color: 'oklch(0.66 0.014 80)' }}>
+              За помощников можно лгать на допросах. Детектив не узнает ни ваш выбор, ни варианты.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {allyChoice.options.map(o => (
+                <button
+                  key={o.group}
+                  onClick={() => allyChoice.onChoose(o.group)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    padding: '9px 12px',
+                    borderRadius: 4,
+                    border: '1px solid oklch(0.42 0.07 27)',
+                    background: 'oklch(0.25 0.025 27 / .6)',
+                    cursor: 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                    <span
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 9999,
+                        background: groupRing(o.group),
+                        flexShrink: 0
+                      }}
+                    />
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'oklch(0.92 0.02 60)' }}>
+                      {GROUP_LABELS[o.group]}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: FONT.mono,
+                        fontSize: 10,
+                        letterSpacing: '0.1em',
+                        color: 'oklch(0.78 0.08 30)'
+                      }}
+                    >
+                      {o.members.length} ЧЕЛ.
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 11.5, lineHeight: 1.4, color: 'oklch(0.66 0.014 80)' }}>
+                    {o.members.length > 0 ? o.members.map(m => m.job).join(', ') : 'в партии никого — кроме вас'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
         <div>
           <div
             style={{
@@ -282,6 +353,7 @@ export function KillerFolder({
             </span>
           </div>
         </div>
+        )}
 
         {/* ночные дела */}
         <div>

@@ -3,6 +3,7 @@ import { applyCommand, canKillNow, getValidKillTargets } from '../engine';
 import { createGame } from '../setup';
 import type { CitizenGroup, GameState } from '../types';
 import {
+  chooseAllyGroup,
   chooseDecoy,
   chooseReplacementGroup,
   chooseVictim,
@@ -12,7 +13,13 @@ import {
 } from './killer';
 
 function gameAtNight(id: string): GameState {
-  const result = applyCommand(createGame(id), 'detective', {
+  const fresh = createGame(id);
+  const ally = applyCommand(fresh, 'killer', {
+    type: 'killer:chooseAlly',
+    group: chooseAllyGroup(fresh)!
+  });
+  if (!ally.ok) throw new Error(ally.error);
+  const result = applyCommand(ally.state, 'detective', {
     type: 'detective:placeCar',
     x: 1,
     y: 1

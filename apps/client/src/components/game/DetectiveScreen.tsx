@@ -10,6 +10,8 @@ import { MAX_CITIZENS_PER_DISTRICT, getNeighbors } from '@citykiller/shared';
 import { FONT, LAYOUT, P } from '@/design/tokens';
 import { districtTitle } from '@/design/city';
 import { GROUP_LABELS, districtName } from '@/lib/labels';
+import { EMPTY_FILTER, deduce, type SuspectFilter } from '@/lib/deduction';
+import { moveTargets } from '@/lib/moves';
 import { GameSheet } from './sheet/GameSheet';
 import { TopBar } from './shell/TopBar';
 import { RulesSheet } from '@/components/RulesSheet';
@@ -25,6 +27,16 @@ import { AccuseDialog } from './AccuseDialog';
 
 /** Режимы выбора цели для эффектов зданий */
 type TargetMode = 'idle' | 'police' | 'hospital' | 'diner' | 'fire';
+
+/** Пауза после пятого убийства перед окном обвинения: осмотреть карту и спросить по жетонам */
+const ACCUSE_DELAY_S = 10;
+
+/** Убрать запланированный переезд жителя — он остаётся на месте */
+function withoutMove<T>(moves: Record<number, T>, citizenId: number): Record<number, T> {
+  const next = { ...moves };
+  delete next[citizenId];
+  return next;
+}
 
 interface DetectiveScreenProps {
   view: DetectiveView;
@@ -55,6 +67,12 @@ export function DetectiveScreen({
   const [mode, setMode] = useState<TargetMode>('idle');
   const [questionTarget, setQuestionTarget] = useState<{ citizenId: number; viaDiner: boolean } | null>(null);
   const [accuseOpen, setAccuseOpen] = useState(false);
+  /** Ответы, которым детектив не верит, и свой фильтр таблицы — личные пометки */
+  const [ignoredAnswers, setIgnoredAnswers] = useState<string[]>([]);
+  const [suspectFilter, setSuspectFilter] = useState<SuspectFilter>(EMPTY_FILTER);
+  // после пятого убийства: отсчёт до окна обвинения и возможность вернуться к карте
+  const [accuseCountdown, setAccuseCountdown] = useState<number | null>(null);
+  const [accuseHidden, setAccuseHidden] = useState(false);
 
   // расселение с места преступления
   const [relocAssignments, setRelocAssignments] = useState<Record<number, { x: number; y: number }>>({});
@@ -97,7 +115,46 @@ export function DetectiveScreen({
     setCitySelected(null);
     setCityMoves({});
     setRelocSelected(null);
+    setRelocAssignments({});
   }, [view.phase, view.turnNumber]);
+
+  // Пятое убийство: окно обвинения открывается не сразу — сначала пауза, чтобы
+  // увидеть, где случилось убийство, и спросить по оставшимся жетонам
+  useEffect(() => {
+    setAccuseHidden(false);
+    if (view.phase !== 'accusation') {
+      setAccuseCountdown(null);
+      return;
+    }
+    setAccuseCountdown(ACCUSE_DELAY_S);
+    const timer = window.setInterval(
+      () => setAccuseCountdown(c => (c !== null && c > 0 ? c - 1 : c)),
+      1000
+    );
+    return () => window.clearInterval(timer);
+  }, [view.phase]);
+
+  const openAccusation = () => {
+    setAccuseCountdown(0);
+    setAccuseHidden(false);
+  };
+  const forcedAccuseOpen = view.phase === 'accusation' && accuseCountdown === 0 && !accuseHidden;
+
+  const deduction = useMemo(
+    () => deduce(view.citizens, view.positions, view.answers, ignoredAnswers, suspectFilter),
+    [view.citizens, view.positions, view.answers, ignoredAnswers, suspectFilter]
+  );
+  const toggleAnswer = (id: string) =>
+    setIgnoredAnswers(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const journalProps = {
+    citizens: view.citizens,
+    positions: view.positions,
+    answers: view.answers,
+    policeAnswers: view.policeAnswers,
+    ignoredIds: ignoredAnswers,
+    conflictIds: deduction.conflicts,
+    onToggleAnswer: toggleAnswer
+  };
 
   const resetModes = () => {
     setMode('idle');
@@ -113,33 +170,43 @@ export function DetectiveScreen({
       for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) all.push({ x, y });
       return all;
     }
+    // Переезды жителей: подсвечиваем только то, что пропустит движок. Раньше карта
+    // принимала любой район, сервер отклонял ход, и партия вставала
     if (view.phase === 'relocation' && relocSelected !== null && view.lastCrimeDistrict) {
-      const crime = view.lastCrimeDistrict;
-      return getNeighbors(crime.x, crime.y).filter(n => {
-        const current = alive.filter(p => p.districtX === n.x && p.districtY === n.y).length;
-        const incoming = Object.entries(relocAssignments).filter(
-          ([id, d]) => Number(id) !== relocSelected && d.x === n.x && d.y === n.y
-        ).length;
-        return current + incoming < MAX_CITIZENS_PER_DISTRICT;
+      return moveTargets({
+        positions: view.positions,
+        victims: view.victims,
+        citizenId: relocSelected,
+        moves: relocAssignments,
+        relocation: { crime: view.lastCrimeDistrict }
       });
     }
     if (view.phase === 'day' && mode === 'fire' && fireSelected !== null) {
-      const pos = posOf(fireSelected)!;
-      return getNeighbors(pos.districtX, pos.districtY);
+      return moveTargets({
+        positions: view.positions,
+        victims: view.victims,
+        citizenId: fireSelected,
+        moves: fireMoves
+      });
     }
     if (view.phase === 'city' && citySelected !== null) {
-      const pos = posOf(citySelected)!;
-      return getNeighbors(pos.districtX, pos.districtY);
+      return moveTargets({
+        positions: view.positions,
+        victims: view.victims,
+        citizenId: citySelected,
+        moves: cityMoves
+      });
     }
     if (view.phase === 'day' && car && view.turn.movesLeft > 0 && mode === 'idle') {
       return getNeighbors(car.x, car.y);
     }
     return [];
-  }, [view, mode, car, relocSelected, relocAssignments, alive, fireSelected, citySelected]);
+  }, [view, mode, car, relocSelected, relocAssignments, fireSelected, fireMoves, citySelected, cityMoves]);
 
   const selectableCitizenIds = useMemo((): number[] => {
     if (view.phase === 'relocation') {
-      return strandedCitizens.filter(p => relocAssignments[p.citizenId] === undefined).map(p => p.citizenId);
+      // уже назначенного тоже можно выбрать заново и переназначить
+      return strandedCitizens.map(p => p.citizenId);
     }
     if (view.phase === 'city') {
       if (!isCityMyTurn || view.city?.emptyGroupNotice) return [];
@@ -176,17 +243,22 @@ export function DetectiveScreen({
       await sendCommand({ type: 'detective:placeCar', x, y });
       return;
     }
+    // пока житель выбран, клик по неподсвеченному району ничего не назначает
+    const allowed = availableDistricts.some(d => d.x === x && d.y === y);
     if (view.phase === 'relocation' && relocSelected !== null) {
+      if (!allowed) return;
       setRelocAssignments(prev => ({ ...prev, [relocSelected]: { x, y } }));
       setRelocSelected(null);
       return;
     }
     if (view.phase === 'day' && mode === 'fire' && fireSelected !== null) {
+      if (!allowed) return;
       setFireMoves(prev => ({ ...prev, [fireSelected]: { x, y } }));
       setFireSelected(null);
       return;
     }
     if (view.phase === 'city' && citySelected !== null) {
+      if (!allowed) return;
       setCityMoves(prev => ({ ...prev, [citySelected]: { x, y } }));
       setCitySelected(null);
       return;
@@ -195,12 +267,23 @@ export function DetectiveScreen({
   };
 
   const handleCitizenClick = async (citizenId: number) => {
+    // повторный клик по выбранному жителю — отмена его переезда
     if (view.phase === 'relocation') {
-      setRelocSelected(citizenId);
+      if (relocSelected === citizenId) {
+        setRelocSelected(null);
+        setRelocAssignments(prev => withoutMove(prev, citizenId));
+      } else {
+        setRelocSelected(citizenId);
+      }
       return;
     }
     if (view.phase === 'city') {
-      setCitySelected(citizenId);
+      if (citySelected === citizenId) {
+        setCitySelected(null);
+        setCityMoves(prev => withoutMove(prev, citizenId));
+      } else {
+        setCitySelected(citizenId);
+      }
       return;
     }
     if (!currentBuilding) return;
@@ -227,7 +310,12 @@ export function DetectiveScreen({
         break;
       }
       case 'fire':
-        setFireSelected(citizenId);
+        if (fireSelected === citizenId) {
+          setFireSelected(null);
+          setFireMoves(prev => withoutMove(prev, citizenId));
+        } else {
+          setFireSelected(citizenId);
+        }
         break;
     }
   };
@@ -294,17 +382,8 @@ export function DetectiveScreen({
     }
   };
 
-  // сколько жителей ещё под подозрением с учётом собранных ответов
-  const suspectCount = useMemo(() => {
-    const attrs = ['sex', 'age', 'size', 'height'] as const;
-    return view.citizens.filter(c => {
-      const pos = posOf(c.id);
-      if (!pos || pos.isDead) return false;
-      return !attrs.some(attr =>
-        view.answers.some(a => a.attribute === attr && a.answer !== (c[attr] === a.value))
-      );
-    }).length;
-  }, [view.citizens, view.positions, view.answers]);
+  // сколько жителей ещё под подозрением: по ответам, которым верим, и своему фильтру
+  const suspectCount = deduction.suspectIds.size;
 
   // ==== содержимое папки дела ====
   const selectedCitizens = inDistrict(selected);
@@ -415,11 +494,38 @@ export function DetectiveScreen({
         list.push({
           id: 'city-move',
           title: `Ваш жетон: «${view.city ? GROUP_LABELS[view.city.group] : ''}»`,
-          desc: 'Кликните жителя этой группы, затем соседний район. Можно никого не двигать',
+          desc: 'Кликните жителя группы, затем подсвеченный район. Повторный клик по жителю — отмена',
           icon: 'move',
           tone: 'plain'
         });
       }
+      return list;
+    }
+
+    // после пятого убийства: партия ещё идёт, жетоны слежки срабатывают до приговора
+    if (view.phase === 'accusation') {
+      list.push({
+        id: 'accuse',
+        title: 'Предъявить обвинение',
+        desc:
+          accuseCountdown !== null && accuseCountdown > 0
+            ? `Окно обвинения откроется само через ${accuseCountdown} с`
+            : 'Назовите профессию убийцы и его мотив',
+        icon: 'ask',
+        tone: 'primary',
+        onClick: openAccusation
+      });
+      view.policeTokens.forEach(t => {
+        if (posOf(t.citizenId)?.isDead) return;
+        list.push({
+          id: `token-${t.citizenId}`,
+          title: `Спросить по жетону: ${citizenById(t.citizenId).job}`,
+          desc: 'Честный ответ: мог ли убийца убить его сейчас. Жетон сгорает',
+          icon: 'token',
+          tone: view.pendingQuestion ? 'disabled' : 'police',
+          onClick: () => sendCommand({ type: 'detective:policeQuestion', citizenId: t.citizenId })
+        });
+      });
       return list;
     }
 
@@ -540,7 +646,17 @@ export function DetectiveScreen({
       if (a.tone !== 'disabled' && a.onClick && key <= 9) a.hotkey = String(key++);
     }
     return list;
-  }, [view, selected, selectedCitizens, carHere, canAct, strandedCitizens, relocAssignments, isCityMyTurn]);
+  }, [
+    view,
+    selected,
+    selectedCitizens,
+    carHere,
+    canAct,
+    strandedCitizens,
+    relocAssignments,
+    isCityMyTurn,
+    accuseCountdown
+  ]);
 
   // горячие клавиши: цифра запускает действие из списка, Esc снимает выбор цели
   useEffect(() => {
@@ -668,6 +784,53 @@ export function DetectiveScreen({
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+          {view.phase === 'accusation' && !forcedAccuseOpen && (
+            <div
+              style={{
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 13,
+                padding: '11px 14px',
+                borderRadius: 5,
+                border: '1px solid oklch(0.5 0.14 27)',
+                background: 'oklch(0.26 0.06 27 / .75)'
+              }}
+            >
+              <span
+                style={{
+                  width: 42,
+                  flexShrink: 0,
+                  textAlign: 'center',
+                  fontFamily: FONT.display,
+                  fontSize: 36,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  color: 'oklch(0.9 0.1 30)'
+                }}
+              >
+                {accuseCountdown !== null && accuseCountdown > 0 ? accuseCountdown : '5'}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: FONT.mono,
+                    fontSize: 9.5,
+                    letterSpacing: '0.22em',
+                    color: 'oklch(0.82 0.1 30)'
+                  }}
+                >
+                  ПЯТОЕ УБИЙСТВО · ДЕЛО ЗАКРЫВАЕТСЯ
+                </div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'oklch(0.86 0.04 40)', marginTop: 3 }}>
+                  {accuseCountdown !== null && accuseCountdown > 0
+                    ? `Окно обвинения откроется через ${accuseCountdown} с. Осмотрите карту и журнал — жетоны слежки ещё работают.`
+                    : 'Осмотрите карту и журнал, затем предъявите обвинение.'}
+                </div>
+              </div>
+            </div>
+          )}
+
           <CaseTabs
             tabs={[
               { id: 'place', label: 'МЕСТО' },
@@ -717,18 +880,14 @@ export function DetectiveScreen({
                   >
                     ЖУРНАЛ ДОПРОСОВ
                   </div>
-                  <Journal
-                    citizens={view.citizens}
-                    positions={view.positions}
-                    answers={view.answers}
-                    policeAnswers={view.policeAnswers}
-                  />
+                  <Journal {...journalProps} />
                 </div>
                 <SuspectsSheet
                   citizens={view.citizens}
                   positions={view.positions}
-                  answers={view.answers}
-                  policeAnswers={view.policeAnswers}
+                  deduction={deduction}
+                  filter={suspectFilter}
+                  onFilterChange={setSuspectFilter}
                 />
               </div>
             ) : tab === 'motives' ? (
@@ -829,6 +988,10 @@ export function DetectiveScreen({
             {/* расселение: список и подтверждение */}
             {tab === 'place' && view.phase === 'relocation' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <HintBox>
+                  Кликните жителя, затем подсвеченный район. Расселённого можно выбрать снова и
+                  переназначить; повторный клик по выбранному жителю отменяет назначение.
+                </HintBox>
                 {strandedCitizens.map(p => {
                   const assigned = relocAssignments[p.citizenId];
                   return (
@@ -893,17 +1056,43 @@ export function DetectiveScreen({
           {/* главные кнопки хода */}
           <div style={{ flexShrink: 0, display: 'flex', gap: 9 }}>
             {view.phase === 'relocation' ? (
-              <PrimaryButton
-                label="Подтвердить расселение"
-                onClick={submitRelocation}
-                disabled={strandedCitizens.some(p => !relocAssignments[p.citizenId])}
-              />
+              <>
+                <PrimaryButton
+                  label="Подтвердить расселение"
+                  onClick={submitRelocation}
+                  disabled={strandedCitizens.some(p => !relocAssignments[p.citizenId])}
+                />
+                <DangerButton
+                  label="Сбросить"
+                  width={120}
+                  disabled={Object.keys(relocAssignments).length === 0}
+                  onClick={() => {
+                    setRelocAssignments({});
+                    setRelocSelected(null);
+                  }}
+                />
+              </>
             ) : view.phase === 'city' ? (
-              <PrimaryButton
-                label="Готово"
-                onClick={submitCityMove}
-                disabled={!isCityMyTurn || !!view.city?.emptyGroupNotice}
-              />
+              <>
+                <PrimaryButton
+                  label="Готово"
+                  onClick={submitCityMove}
+                  disabled={!isCityMyTurn || !!view.city?.emptyGroupNotice}
+                />
+                {isCityMyTurn && (
+                  <DangerButton
+                    label="Сбросить"
+                    width={120}
+                    disabled={Object.keys(cityMoves).length === 0}
+                    onClick={() => {
+                      setCityMoves({});
+                      setCitySelected(null);
+                    }}
+                  />
+                )}
+              </>
+            ) : view.phase === 'accusation' ? (
+              <PrimaryButton label="Предъявить обвинение" onClick={openAccusation} />
             ) : (
               <>
                 <PrimaryButton
@@ -926,29 +1115,31 @@ export function DetectiveScreen({
       />
 
       <AccuseDialog
-        open={accuseOpen || view.phase === 'accusation'}
+        open={accuseOpen || forcedAccuseOpen}
         forced={view.phase === 'accusation'}
         citizens={view.citizens.filter(c => {
           const pos = posOf(c.id);
           return pos && !pos.isDead;
         })}
+        positions={view.positions}
+        policeTokens={view.policeTokens}
+        policeAnswers={view.policeAnswers}
+        suspectIds={deduction.suspectIds}
+        onPoliceQuestion={citizenId => void sendCommand({ type: 'detective:policeQuestion', citizenId })}
         allCitizens={view.citizens}
         victims={view.victims}
         motiveOptions={view.motiveOptions}
         crossedMotives={crossedMotives}
-        journal={
-          <Journal
-            citizens={view.citizens}
-            positions={view.positions}
-            answers={view.answers}
-            policeAnswers={view.policeAnswers}
-          />
-        }
+        journal={<Journal {...journalProps} />}
         onSubmit={(job, motiveId) => {
           void sendCommand({ type: 'detective:accuse', job, motiveId });
           setAccuseOpen(false);
         }}
-        onClose={() => setAccuseOpen(false)}
+        onClose={() => {
+          // после пятого убийства это «к карте»: обвинение остаётся обязательным
+          if (view.phase === 'accusation') setAccuseHidden(true);
+          setAccuseOpen(false);
+        }}
       />
     </div>
   );

@@ -159,6 +159,14 @@ export interface Victim {
   wasScared: boolean;
 }
 
+/** Кого и какой мотив назвал детектив — нужно финалу, чтобы показать ошибку рядом с разгадкой */
+export interface Accusation {
+  job: string;
+  motiveId: string;
+  jobCorrect: boolean;
+  motiveCorrect: boolean;
+}
+
 export interface GameLogEntry {
   seq: number;
   turnNumber: number;
@@ -176,12 +184,21 @@ export interface GameState {
   positions: CitizenPosition[];
   buildings: Building[];
   killer: KillerInfo;
+  /**
+   * Три случайные группы, из которых убийца в начале партии выбирает помощников.
+   * Секрет убийцы: детектив не видит ни вариантов, ни самого выбора.
+   */
+  allyGroupOptions: CitizenGroup[];
+  /** Выбрал ли убийца группу-помощника. Пока нет — ночь не наступит */
+  allyGroupChosen: boolean;
   /** 6 мотивов-кандидатов (id), среди которых ровно один настоящий (killer.motiveId) */
   motiveOptions: string[];
   detective: { x: number; y: number } | null;
   killsCount: number;
   /** Убийца уже воспользовался разовым отказом от убийства за эту партию */
   declinedKillUsed: boolean;
+  /** Обвинение детектива; null, пока его не предъявили */
+  accusation: Accusation | null;
   /** Жертвы в порядке убийства */
   victims: Victim[];
   /** Район последнего убийства (для фазы relocation) */
@@ -207,6 +224,12 @@ export interface PlaceCarCommand {
   type: 'detective:placeCar';
   x: number;
   y: number;
+}
+
+/** Убийца выбирает группу-помощника из трёх предложенных (до первой ночи) */
+export interface ChooseAllyCommand {
+  type: 'killer:chooseAlly';
+  group: CitizenGroup;
 }
 
 export interface NightCommand {
@@ -279,6 +302,7 @@ export interface CityMoveCommand {
 
 export type GameCommand =
   | PlaceCarCommand
+  | ChooseAllyCommand
   | NightCommand
   | RelocateCommand
   | MoveCommand
@@ -325,6 +349,7 @@ export interface DetectiveView {
   city: CityState | null;
   winner: PlayerRole | null;
   winReason: string | null;
+  accusation: Accusation | null;
   /**
    * Разгадка: кем был убийца, каков настоящий мотив и кто ему подыгрывал.
    * Приходит ТОЛЬКО после конца партии — до этого null, иначе игра теряет смысл.
@@ -342,6 +367,9 @@ export interface KillerView {
   positions: CitizenPosition[];
   buildings: Building[];
   killer: KillerInfo;
+  /** Три группы на выбор помощников; пока allyGroupChosen === false, killer.allyGroup — лишь заглушка */
+  allyGroupOptions: CitizenGroup[];
+  allyGroupChosen: boolean;
   /** 6 мотивов-кандидатов (id), которые видит детектив; настоящий — killer.motiveId */
   motiveOptions: string[];
   /** Жертвы, доступные этой ночью по мотиву и правилам */
@@ -359,6 +387,7 @@ export interface KillerView {
   city: CityState | null;
   winner: PlayerRole | null;
   winReason: string | null;
+  accusation: Accusation | null;
   log: GameLogEntry[];
 }
 

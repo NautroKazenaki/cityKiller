@@ -3,6 +3,7 @@ import { getValidKillTargets } from '../engine';
 import { getMotive } from '../motives';
 import type {
   Citizen,
+  CitizenGroup,
   CityMoveCommand,
   GameState,
   NightCommand,
@@ -255,6 +256,26 @@ export function decideCityMove(state: GameState): CityMoveCommand {
   }
 
   return { type: 'city:moveGroup', moves };
+}
+
+/**
+ * Выбор группы-помощника из трёх предложенных: берём ту, где больше живых людей
+ * (кроме себя). Каждый помощник — ещё один рот, которым можно солгать.
+ */
+export function chooseAllyGroup(state: GameState): CitizenGroup | null {
+  const options = state.allyGroupOptions ?? [];
+  let best: CitizenGroup | null = options[0] ?? null;
+  let bestCount = -1;
+  for (const group of options) {
+    const count = state.citizens.filter(
+      c => c.group === group && c.id !== state.killer.citizenId && isAlive(state, c.id)
+    ).length;
+    if (count > bestCount) {
+      bestCount = count;
+      best = group;
+    }
+  }
+  return best;
 }
 
 /** Замена выпавшей пустой группы: берём самую многочисленную из живых */
