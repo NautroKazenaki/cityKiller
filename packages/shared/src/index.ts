@@ -6,4 +6,5 @@ export * from './engine';
 export * from './views';
 export * as killerBot from './bot/killer';
 export * as detectiveBot from './bot/detective';
+export { decideBotCommand } from './bot/decide';
 export { CITIZEN_GROUPS, GROUP_TITLES, getGroupForJob } from './data/groups';

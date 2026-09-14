@@ -6,16 +6,10 @@ import {
   WebSocketGateway,
   WebSocketServer
 } from '@nestjs/websockets';
-import {
-  GameCommand,
-  GameState,
-  PlayerRole,
-  applyCommand,
-  detectiveBot,
-  killerBot
-} from '@citykiller/shared';
+import { GameCommand, PlayerRole, applyCommand } from '@citykiller/shared';
 import { Server, Socket } from 'socket.io';
 import { AuthService } from './auth.service';
+import { BotRunnerService } from './bot-runner.service';
 import { PersistenceService } from './persistence.service';
 import { Room, RoomsService } from './rooms.service';
 
@@ -60,8 +54,12 @@ export class GameGateway implements OnGatewayDisconnect {
   constructor(
     private readonly rooms: RoomsService,
     private readonly persistence: PersistenceService,
-    private readonly auth: AuthService
+    private readonly auth: AuthService,
+    private readonly botRunner: BotRunnerService
   ) {}
+
+  /** Поколение расчёта хода бота по комнатам: решение для устаревшего состояния выбрасываем */
+  private readonly botGenerations = new Map<string, number>();
 
   /**
    * Кто входит в комнату. С токеном — владелец аккаунта, и имя берётся из логина:
@@ -207,42 +205,6 @@ export class GameGateway implements OnGatewayDisconnect {
     return { ok: true as const };
   }
 
-  /**
-   * Команда бота для текущего состояния. null — сейчас ходит человек.
-   * Решения принимает чистая логика из shared, а применяются они обычным
-   * applyCommand: бот физически не может сходить против правил.
-   */
-  private botCommand(state: GameState, role: PlayerRole): GameCommand | null {
-    if (state.phase === 'finished') return null;
-
-    if (role === 'killer') {
-      // группа-помощник выбирается до первой ночи; у старых сохранений поля нет
-      if (state.allyGroupChosen === false && (state.phase === 'setup' || state.phase === 'night')) {
-        const group = killerBot.chooseAllyGroup(state);
-        return group ? { type: 'killer:chooseAlly', group } : null;
-      }
-      if (state.pendingQuestion) {
-        return {
-          type: 'killer:answer',
-          questionId: state.pendingQuestion.id,
-          answer: killerBot.decideAnswer(state, state.pendingQuestion)
-        };
-      }
-      if (state.phase === 'night') return killerBot.decideNight(state);
-      if (state.phase === 'city' && state.city?.stage === 'killer') {
-        if (state.city.emptyGroupNotice) {
-          const group = killerBot.chooseReplacementGroup(state);
-          return group ? { type: 'city:chooseGroup', group: group as never } : null;
-        }
-        return killerBot.decideCityMove(state);
-      }
-    }
-
-    if (role === 'detective') return detectiveBot.decideDetective(state);
-
-    return null;
-  }
-
   /** Пауза перед ходом бота: ожидание должно читаться как обдумывание, а не как лаг */
   private botDelay(command: GameCommand): number {
     if (command.type === 'killer:answer') return 900;
@@ -252,44 +214,65 @@ export class GameGateway implements OnGatewayDisconnect {
     return 700;
   }
 
+  /**
+   * Ход бота. Решение считается в отдельном потоке (BotRunnerService), пауза
+   * «на обдумывание» отсчитывается от начала расчёта, так что тяжёлый перебор
+   * не удлиняет ожидание. Применяется ход обычным applyCommand: бот физически
+   * не может сходить против правил.
+   *
+   * Каждый новый вызов открывает новое «поколение»: если, пока бот думал,
+   * кто-то сходил, устаревшее решение выбрасывается и считается заново.
+   */
   private scheduleBotMove(room: Room): void {
-    const existing = this.botTimers.get(room.roomCode);
+    const code = room.roomCode;
+    const existing = this.botTimers.get(code);
     if (existing) clearTimeout(existing);
+    this.botTimers.delete(code);
+    const generation = (this.botGenerations.get(code) ?? 0) + 1;
+    this.botGenerations.set(code, generation);
 
     const role = this.rooms.botRole(room);
-    if (!role || !room.state) return;
+    const snapshot = room.state;
+    if (!role || !snapshot || snapshot.phase === 'finished') return;
 
-    const command = this.botCommand(room.state, role);
-    if (!command) return;
+    const startedAt = Date.now();
+    void this.botRunner.decide(snapshot, role).then(command => {
+      if (!command || this.botGenerations.get(code) !== generation) return;
+      const wait = Math.max(0, this.botDelay(command) - (Date.now() - startedAt));
 
-    const timer = setTimeout(() => {
-      this.botTimers.delete(room.roomCode);
-      const fresh = this.rooms.getRoom(room.roomCode);
-      if (!fresh?.state) return;
-
-      // состояние могло измениться за время паузы — решаем заново
-      const next = this.botCommand(fresh.state, role);
-      if (!next) return;
-
-      let result = applyCommand(fresh.state, role, next);
-      if (!result.ok) {
-        console.warn(`[bot:${role}] ход отклонён: ${result.error}`);
-        // детектив не должен повесить партию на своём дне: закрываем ход и идём дальше
-        if (role === 'detective' && fresh.state.phase === 'day' && !fresh.state.pendingQuestion) {
-          result = applyCommand(fresh.state, role, { type: 'detective:endTurn' });
+      const timer = setTimeout(() => {
+        this.botTimers.delete(code);
+        if (this.botGenerations.get(code) !== generation) return;
+        const fresh = this.rooms.getRoom(code);
+        if (!fresh?.state) return;
+        // состояние изменилось, пока бот думал, — решаем заново
+        if (fresh.state !== snapshot) {
+          this.scheduleBotMove(fresh);
+          return;
         }
-        if (!result.ok) return;
-      }
 
-      fresh.state = result.state;
-      this.persistence.logAction(fresh.state.id, role, next);
-      this.rooms.saveRoom(fresh);
-      this.broadcastRoom(fresh);
-      // бот может ходить несколько раз подряд: ночь, потом фаза Города
-      this.scheduleBotMove(fresh);
-    }, this.botDelay(command));
+        let applied: GameCommand = command;
+        let result = applyCommand(fresh.state, role, applied);
+        if (!result.ok) {
+          console.warn(`[bot:${role}] ход отклонён: ${result.error}`);
+          // детектив не должен повесить партию на своём дне: закрываем ход и идём дальше
+          if (role === 'detective' && fresh.state.phase === 'day' && !fresh.state.pendingQuestion) {
+            applied = { type: 'detective:endTurn' };
+            result = applyCommand(fresh.state, role, applied);
+          }
+          if (!result.ok) return;
+        }
 
-    this.botTimers.set(room.roomCode, timer);
+        fresh.state = result.state;
+        this.persistence.logAction(fresh.state.id, role, applied);
+        this.rooms.saveRoom(fresh);
+        this.broadcastRoom(fresh);
+        // бот может ходить несколько раз подряд: ночь, потом фаза Города
+        this.scheduleBotMove(fresh);
+      }, wait);
+
+      this.botTimers.set(code, timer);
+    });
   }
 
   handleDisconnect(socket: Socket): void {

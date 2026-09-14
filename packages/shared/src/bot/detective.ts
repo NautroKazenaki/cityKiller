@@ -6,10 +6,12 @@ import {
   getNeighbors
 } from '../board';
 import { getMotive } from '../motives';
+import { enumerateGroupMoves, positionsAfter } from './common';
 import type {
   Citizen,
   CitizenGroup,
   CitizenPosition,
+  CityMoveCommand,
   GameCommand,
   GameState,
   QuestionAttribute,
@@ -55,7 +57,7 @@ const QUESTIONS: Array<{ attribute: QuestionAttribute; value: QuestionValue }> =
  * своим же предикатом на восстановленном состоянии; у трёх нужны факты,
  * которых в нынешнем состоянии уже нет. null — проверить нечем (старое сохранение).
  */
-function motiveAllowedThen(
+export function motiveAllowedThen(
   id: string,
   victim: Citizen,
   victimPosition: CitizenPosition,
@@ -155,8 +157,27 @@ function hypothesisWeight(state: GameState, h: Hypothesis): number {
     const who = citizenOf(state, a.citizenId);
     if (who && canLie(h, who)) liars++;
   }
-  return Math.pow(0.5, liars);
+  let weight = Math.pow(0.5, liars);
+
+  // Убийца пугает тех, кто может его выдать, а своих бережёт: запуганный лжец
+  // при этой гипотезе — ход против собственных интересов. Так же со жертвами из
+  // группы помощников. Это мягкие улики, а не запреты — блефовать убийца вправе,
+  // поэтому гипотеза лишь теряет вес и из списка не выпадает
+  for (const p of state.positions) {
+    if (p.isDead || !p.isScared) continue;
+    const who = citizenOf(state, p.citizenId);
+    if (who && canLie(h, who)) weight *= SCARED_LIAR_FACTOR;
+  }
+  for (const v of state.victims) {
+    if (citizenOf(state, v.citizenId)?.group === h.allyGroup) weight *= ALLY_VICTIM_FACTOR;
+  }
+  return weight;
 }
+
+/** Во сколько раз менее вероятна гипотеза, по которой запуган её же лжец */
+const SCARED_LIAR_FACTOR = 0.45;
+/** … и по которой убийца убил своего помощника */
+const ALLY_VICTIM_FACTOR = 0.6;
 
 export interface WeightedHypotheses {
   hs: Hypothesis[];
@@ -251,6 +272,11 @@ function bestQuestionFor(state: GameState, wh: WeightedHypotheses, citizenId: nu
   return best;
 }
 
+/** Сколько бит о личности убийцы даёт лучший вопрос этому жителю. Им пользуется и бот-убийца */
+export function citizenQuestionGain(state: GameState, wh: WeightedHypotheses, citizenId: number): number {
+  return bestQuestionFor(state, wh, citizenId)?.gain ?? 0;
+}
+
 /** Живые незапуганные жители района, которых ещё можно спросить */
 function askableIn(state: GameState, d: District, exclude: number[] = []): number[] {
   return aliveCitizensIn(state.positions, d.x, d.y)
@@ -265,6 +291,46 @@ function bestQuestionAmong(state: GameState, wh: WeightedHypotheses, ids: number
     if (pick && (!best || pick.gain > best.gain)) best = pick;
   }
   return best;
+}
+
+/**
+ * Ценность района с учётом его здания. Убийца глушит испугом свидетелей вокруг
+ * места преступления — здания это обходят: закусочная спрашивает соседний район,
+ * больница возвращает голос самому ценному запуганному.
+ */
+function districtPlanValue(
+  state: GameState,
+  wh: WeightedHypotheses,
+  d: District,
+  abilities: number,
+  exclude: number[],
+  usedBuildings: string[]
+): { value: number; heal: number | null } {
+  const regular = districtValue(state, wh, d, abilities, exclude);
+  const building = state.buildings.find(
+    b => b.districtX === d.x && b.districtY === d.y && !usedBuildings.includes(b.id)
+  );
+  if (!building || abilities <= 0) return { value: regular, heal: null };
+
+  if (building.type === 'diner') {
+    const neighbourGain = Math.max(
+      0,
+      ...getNeighbors(d.x, d.y)
+        .flatMap(n => askableIn(state, n))
+        .map(id => bestQuestionFor(state, wh, id)?.gain ?? 0)
+    );
+    const hereBest = abilities >= 2 ? districtValue(state, wh, d, 1, exclude) : 0;
+    return { value: Math.max(regular, neighbourGain + hereBest), heal: null };
+  }
+
+  if (building.type === 'hospital' && abilities >= 2) {
+    const scared = aliveCitizensIn(state.positions, d.x, d.y)
+      .filter(p => p.isScared && !exclude.includes(p.citizenId))
+      .map(p => ({ id: p.citizenId, gain: bestQuestionFor(state, wh, p.citizenId)?.gain ?? 0 }))
+      .sort((a, b) => b.gain - a.gain)[0];
+    if (scared && scared.gain > regular) return { value: scared.gain, heal: scared.id };
+  }
+  return { value: regular, heal: null };
 }
 
 /** Ценность района: сумма лучших вопросов к его жителям на оставшиеся действия */
@@ -490,15 +556,29 @@ function decideDay(state: GameState): GameCommand {
   const hs = wh.hs;
   if (certainAccusation(state, hs)) return { type: 'detective:accuse', ...chooseAccusation(state) };
   // убийца уже вычислен — вопросы о признаках больше ничего не дадут, ждём фактов о мотиве
-  if (distinctKillers(hs) <= 1 || !state.detective) return endTurn;
+  if (distinctKillers(hs) <= 1 || !state.detective) return parkingMove(state) ?? endTurn;
 
   const car = state.detective;
   const turn = state.turn;
   const canAskHere =
     turn.abilitiesLeft > 0 && (!turn.questionedDistrict || same(turn.questionedDistrict, car));
-  const hereValue = canAskHere
-    ? districtValue(state, wh, car, turn.abilitiesLeft, turn.questionedCitizenIds)
-    : 0;
+  const herePlan = canAskHere
+    ? districtPlanValue(state, wh, car, turn.abilitiesLeft, turn.questionedCitizenIds, turn.usedBuildingIds)
+    : { value: 0, heal: null };
+  const hereValue = herePlan.value;
+
+  // Больница выгоднее допросов здесь: лечить надо первым действием, иначе на
+  // «вылечить и сразу спросить» не хватит действий
+  const hereHospital = state.buildings.find(
+    b => b.type === 'hospital' && b.districtX === car.x && b.districtY === car.y
+  );
+  if (herePlan.heal !== null && hereHospital && turn.abilitiesLeft >= 2) {
+    return {
+      type: 'detective:useBuilding',
+      buildingId: hereHospital.id,
+      payload: { kind: 'hospital', citizenId: herePlan.heal }
+    };
+  }
 
   // пока мотив не ясен, участок ценен сам по себе: жетон проверяет мотивы честно
   const motiveOpen = motiveScores(state).filter(s => s.consistent).length > 1;
@@ -517,7 +597,10 @@ function decideDay(state: GameState): GameCommand {
     for (const d of allDistricts()) {
       const dist = distance(car, d);
       if (dist === 0 || dist > turn.movesLeft) continue;
-      const value = districtValue(state, wh, d, turn.abilitiesLeft, []) + policeBonus(d) - dist * 0.01;
+      const value =
+        districtPlanValue(state, wh, d, turn.abilitiesLeft, [], turn.usedBuildingIds).value +
+        policeBonus(d) -
+        dist * 0.01;
       if (value > targetValue + 0.05) {
         targetValue = value;
         target = d;
@@ -544,6 +627,21 @@ function decideDay(state: GameState): GameCommand {
   const building = state.buildings.find(b => b.districtX === car.x && b.districtY === car.y);
   if (building && turn.abilitiesLeft > 0 && !turn.usedBuildingIds.includes(building.id)) {
     const nearby = getNeighbors(car.x, car.y);
+    if (building.type === 'hospital' && turn.abilitiesLeft >= 2 && canAskHere) {
+      // Больница окупается, только если вылеченного успеем спросить в этот же ход:
+      // берём самого ценного запуганного свидетеля в районе машины
+      const scared = aliveCitizensIn(state.positions, car.x, car.y)
+        .filter(p => p.isScared && !turn.questionedCitizenIds.includes(p.citizenId))
+        .map(p => ({ id: p.citizenId, gain: bestQuestionFor(state, wh, p.citizenId)?.gain ?? 0 }))
+        .sort((a, b) => b.gain - a.gain)[0];
+      if (scared && scared.gain > 0.3) {
+        return {
+          type: 'detective:useBuilding',
+          buildingId: building.id,
+          payload: { kind: 'hospital', citizenId: scared.id }
+        };
+      }
+    }
     if (building.type === 'diner') {
       const pick = bestQuestionAmong(
         state,
@@ -589,7 +687,118 @@ function decideDay(state: GameState): GameCommand {
     }
   }
 
-  return endTurn;
+  return parkingMove(state) ?? endTurn;
+}
+
+// ==== защита: сколько жертв останется у убийцы ====
+
+/** Вероятность каждого мотива: среди непротиворечащих фактам — по правдоподобию */
+export function motiveProbabilities(state: GameState): Map<string, number> {
+  const scores = motiveScores(state);
+  const pool = scores.some(s => s.consistent) ? scores.filter(s => s.consistent) : scores;
+  const top = Math.max(...pool.map(s => s.logLikelihood));
+  const weights = pool.map(s => ({ id: s.id, w: Number.isFinite(s.logLikelihood) ? Math.exp(s.logLikelihood - top) : 0 }));
+  const total = weights.reduce((sum, x) => sum + x.w, 0) || 1;
+  return new Map(weights.map(x => [x.id, x.w / total]));
+}
+
+/**
+ * Сколько законных жертв в среднем будет у убийцы следующей ночью, если
+ * машина встанет в car, а жители — как в positions. Усреднение по мотивам с их
+ * вероятностями. Чем меньше, тем лучше детективу: без жертв убийца не наберёт
+ * пять убийств за шесть раундов.
+ */
+export function expectedTargets(
+  state: GameState,
+  positions: CitizenPosition[],
+  car: District,
+  probabilities: Map<string, number>
+): number {
+  const then: GameState = { ...state, positions, detective: car };
+  const population = new Map<string, number>();
+  for (const p of positions) {
+    if (p.isDead) continue;
+    const key = `${p.districtX},${p.districtY}`;
+    population.set(key, (population.get(key) ?? 0) + 1);
+  }
+  let total = 0;
+  for (const [motiveId, p] of probabilities) {
+    if (p < 0.01) continue;
+    let n = 0;
+    for (const pos of positions) {
+      if (pos.isDead || (pos.districtX === car.x && pos.districtY === car.y)) continue;
+      const c = citizenOf(state, pos.citizenId);
+      if (!c) continue;
+      const record = { carAt: car, populationAtKill: population.get(`${pos.districtX},${pos.districtY}`) ?? 1 };
+      if (motiveAllowedThen(motiveId, c, pos, record, then) !== false) n++;
+    }
+    total += p * n;
+  }
+  return total;
+}
+
+/**
+ * В конце дня оставшиеся перемещения тратим на стоянку: машина закрывает свой
+ * район (а для «Вигиланта» — и соседние), так что ставим её туда, где у убийцы
+ * останется меньше всего законных жертв. Утром машина всё равно поедет на место
+ * следующего преступления, так что стоянка ничего не стоит.
+ */
+function parkingMove(state: GameState): GameCommand | null {
+  const car = state.detective;
+  if (!car || state.turn.movesLeft <= 0) return null;
+  const probabilities = motiveProbabilities(state);
+  const here = expectedTargets(state, state.positions, car, probabilities);
+  let target: District | null = null;
+  let targetValue = here - 0.5; // ради мелочи не ездим
+  for (const d of allDistricts()) {
+    const dist = distance(car, d);
+    if (dist === 0 || dist > state.turn.movesLeft) continue;
+    const value = expectedTargets(state, state.positions, d, probabilities) + dist * 0.01;
+    if (value < targetValue) {
+      targetValue = value;
+      target = d;
+    }
+  }
+  if (!target) return null;
+  const step = getNeighbors(car.x, car.y).find(n => distance(n, target!) === distance(car, target!) - 1)!;
+  return { type: 'detective:move', x: step.x, y: step.y };
+}
+
+/**
+ * Фаза Города: перебираем все допустимые перемещения выпавшей группы. Цель —
+ * оставить убийце как можно меньше законных жертв следующей ночью; вторая —
+ * подтянуть к машине незапуганных свидетелей, которых стоит спросить завтра.
+ */
+function decideCityMoveDetective(state: GameState): CityMoveCommand {
+  const city = state.city;
+  const car = state.detective;
+  if (!city || city.emptyGroupNotice || !car) return { type: 'city:moveGroup', moves: [] };
+
+  const probabilities = motiveProbabilities(state);
+  const wh = weighHypotheses(state);
+  const gain = new Map<number, number>();
+  for (const c of state.citizens) if (isAlive(state, c.id)) gain.set(c.id, bestQuestionFor(state, wh, c.id)?.gain ?? 0);
+  const reach = allDistricts().filter(d => distance(car, d) <= 2);
+
+  let best: CityMoveCommand['moves'] = [];
+  let bestScore = -Infinity;
+  for (const moves of enumerateGroupMoves(state, city.group)) {
+    const positions = positionsAfter(state, moves);
+    let info = 0;
+    for (const d of reach) {
+      const gains = positions
+        .filter(p => !p.isDead && !p.isScared && p.districtX === d.x && p.districtY === d.y)
+        .map(p => gain.get(p.citizenId) ?? 0)
+        .sort((a, b) => b - a);
+      info = Math.max(info, (gains[0] ?? 0) + (gains[1] ?? 0));
+    }
+    const score = -expectedTargets(state, positions, car, probabilities) + info * 0.5 - moves.length * 0.01;
+    if (score > bestScore) {
+      bestScore = score;
+      best = moves;
+    }
+  }
+  return { type: 'city:moveGroup', moves: best };
 }
 
 function mostPopulatedGroup(state: GameState, except: CitizenGroup): CitizenGroup | null {
@@ -627,7 +836,7 @@ export function decideDetective(state: GameState): GameCommand | null {
         const group = mostPopulatedGroup(state, state.city.emptyGroupNotice);
         return group ? { type: 'city:chooseGroup', group } : null;
       }
-      return { type: 'city:moveGroup', moves: [] };
+      return decideCityMoveDetective(state);
     }
     default:
       return null;
