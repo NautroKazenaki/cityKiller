@@ -9,6 +9,8 @@ export interface GameSummary {
   role: PlayerRole;
   won: boolean;
   opponent: string | null;
+  /** Соперником был бот */
+  vsBot: boolean;
   motiveId: string;
   killerJob: string;
   killsCount: number;
@@ -31,9 +33,8 @@ export interface DetectiveMotiveLine extends MotiveLine {
   motiveGuessed: number;
 }
 
-export interface ProfileStats {
-  login: string;
-  memberSince: string;
+/** Статистика по одному срезу партий: против людей, против бота или все вместе */
+export interface ScopeStats {
   total: { games: number; wins: number };
   detective: {
     games: number;
@@ -55,6 +56,14 @@ export interface ProfileStats {
   recent: GameSummary[];
 }
 
+export interface ProfileStats {
+  login: string;
+  memberSince: string;
+  people: ScopeStats;
+  bot: ScopeStats;
+  all: ScopeStats;
+}
+
 const RECENT_LIMIT = 30;
 
 function motiveTitle(id: string): string {
@@ -65,8 +74,7 @@ function byMotiveSorted<T extends MotiveLine>(map: Map<string, T>): T[] {
   return [...map.values()].sort((a, b) => b.games - a.games || a.title.localeCompare(b.title, 'ru'));
 }
 
-/** Статистика кабинета из завершённых партий игрока против людей */
-export function computeProfile(user: PublicUser, rows: UserGameRow[]): ProfileStats {
+function computeScope(user: PublicUser, rows: UserGameRow[]): ScopeStats {
   const summaries: GameSummary[] = [];
   const detMotives = new Map<string, DetectiveMotiveLine>();
   const kilMotives = new Map<string, MotiveLine>();
@@ -98,6 +106,7 @@ export function computeProfile(user: PublicUser, rows: UserGameRow[]): ProfileSt
       role,
       won,
       opponent: role === 'detective' ? row.killerName : row.detectiveName,
+      vsBot: row.vsBot,
       motiveId,
       killerJob,
       killsCount: state.killsCount,
@@ -146,8 +155,6 @@ export function computeProfile(user: PublicUser, rows: UserGameRow[]): ProfileSt
   }
 
   return {
-    login: user.login,
-    memberSince: user.createdAt,
     total: { games: det.games + kil.games, wins: det.wins + kil.wins },
     detective: { ...det, byMotive: byMotiveSorted(detMotives) },
     killer: {
@@ -156,5 +163,26 @@ export function computeProfile(user: PublicUser, rows: UserGameRow[]): ProfileSt
       byMotive: byMotiveSorted(kilMotives)
     },
     recent: summaries.slice(0, RECENT_LIMIT)
+  };
+}
+
+/**
+ * Статистика кабинета из завершённых партий игрока. Партии против людей и
+ * против бота считаются раздельно: победа над ботом и над живым игроком —
+ * разные достижения, — и вместе, для общей картины.
+ */
+export function computeProfile(user: PublicUser, rows: UserGameRow[]): ProfileStats {
+  return {
+    login: user.login,
+    memberSince: user.createdAt,
+    people: computeScope(
+      user,
+      rows.filter(r => !r.vsBot)
+    ),
+    bot: computeScope(
+      user,
+      rows.filter(r => r.vsBot)
+    ),
+    all: computeScope(user, rows)
   };
 }

@@ -16,6 +16,18 @@ export interface StoredRoom {
   killerUserId: string | null;
   /** Партия против бота — в статистику кабинета не идёт */
   vsBot: boolean;
+  /** За кого играл бот; без этого не отличить бота от гостя в партии с ботом */
+  botRole: PlayerRole | null;
+}
+
+/** Завершённая партия в разрезе «кто за кого играл» — сырьё для рейтинга */
+export interface LeaderboardRow {
+  winner: PlayerRole;
+  detectiveUserId: string | null;
+  killerUserId: string | null;
+  detectiveLogin: string | null;
+  killerLogin: string | null;
+  botRole: PlayerRole | null;
 }
 
 export interface UserRecord {
@@ -35,6 +47,8 @@ export interface UserGameRow {
   detectiveName: string | null;
   killerName: string | null;
   updatedAt: string;
+  /** Партия против бота — в кабинете отдельный раздел */
+  vsBot: boolean;
 }
 
 export interface GameHistoryEntry {
@@ -99,13 +113,14 @@ export class PersistenceService implements OnModuleDestroy {
     if (!columns.has('detective_user_id')) this.db.exec('ALTER TABLE games ADD COLUMN detective_user_id TEXT');
     if (!columns.has('killer_user_id')) this.db.exec('ALTER TABLE games ADD COLUMN killer_user_id TEXT');
     if (!columns.has('vs_bot')) this.db.exec('ALTER TABLE games ADD COLUMN vs_bot INTEGER NOT NULL DEFAULT 0');
+    if (!columns.has('bot_role')) this.db.exec('ALTER TABLE games ADD COLUMN bot_role TEXT');
   }
 
   saveRoom(room: StoredRoom): void {
     this.db
       .prepare(
-        `INSERT INTO games (id, room_code, state_json, detective_token, killer_token, detective_name, killer_name, winner, kills_count, turn_number, detective_user_id, killer_user_id, vs_bot, updated_at)
-         VALUES (@id, @roomCode, @stateJson, @detectiveToken, @killerToken, @detectiveName, @killerName, @winner, @killsCount, @turnNumber, @detectiveUserId, @killerUserId, @vsBot, datetime('now'))
+        `INSERT INTO games (id, room_code, state_json, detective_token, killer_token, detective_name, killer_name, winner, kills_count, turn_number, detective_user_id, killer_user_id, vs_bot, bot_role, updated_at)
+         VALUES (@id, @roomCode, @stateJson, @detectiveToken, @killerToken, @detectiveName, @killerName, @winner, @killsCount, @turnNumber, @detectiveUserId, @killerUserId, @vsBot, @botRole, datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            state_json = @stateJson,
            detective_token = @detectiveToken,
@@ -118,6 +133,7 @@ export class PersistenceService implements OnModuleDestroy {
            detective_user_id = @detectiveUserId,
            killer_user_id = @killerUserId,
            vs_bot = @vsBot,
+           bot_role = @botRole,
            updated_at = datetime('now')`
       )
       .run({
@@ -133,8 +149,42 @@ export class PersistenceService implements OnModuleDestroy {
         turnNumber: room.state.turnNumber,
         detectiveUserId: room.detectiveUserId,
         killerUserId: room.killerUserId,
-        vsBot: room.vsBot ? 1 : 0
+        vsBot: room.vsBot ? 1 : 0,
+        botRole: room.botRole
       });
+  }
+
+  /**
+   * Все завершённые партии для рейтинга — вместе с партиями против бота.
+   * У партий с ботом, записанных до колонки bot_role, бот был только убийцей.
+   */
+  listLeaderboardRows(): LeaderboardRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT g.winner, g.detective_user_id, g.killer_user_id,
+                du.login AS detective_login, ku.login AS killer_login,
+                CASE WHEN g.vs_bot = 1 THEN COALESCE(g.bot_role, 'killer') END AS bot_role
+         FROM games g
+         LEFT JOIN users du ON du.id = g.detective_user_id
+         LEFT JOIN users ku ON ku.id = g.killer_user_id
+         WHERE g.winner IS NOT NULL`
+      )
+      .all() as Array<{
+      winner: PlayerRole;
+      detective_user_id: string | null;
+      killer_user_id: string | null;
+      detective_login: string | null;
+      killer_login: string | null;
+      bot_role: PlayerRole | null;
+    }>;
+    return rows.map(r => ({
+      winner: r.winner,
+      detectiveUserId: r.detective_user_id,
+      killerUserId: r.killer_user_id,
+      detectiveLogin: r.detective_login,
+      killerLogin: r.killer_login,
+      botRole: r.bot_role
+    }));
   }
 
   // ==== аккаунты ====
@@ -180,17 +230,18 @@ export class PersistenceService implements OnModuleDestroy {
     this.db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
   }
 
-  /** Завершённые партии игрока против живых людей, новые сверху */
+  /** Завершённые партии игрока — и против людей, и против бота; новые сверху */
   listUserGames(userId: string): UserGameRow[] {
     const rows = this.db
       .prepare(
-        `SELECT id, room_code, state_json, detective_user_id, killer_user_id, detective_name, killer_name, updated_at
+        `SELECT id, room_code, state_json, detective_user_id, killer_user_id, detective_name, killer_name, updated_at, vs_bot
          FROM games
          WHERE (detective_user_id = @userId OR killer_user_id = @userId)
-           AND winner IS NOT NULL AND vs_bot = 0
+           AND winner IS NOT NULL
          ORDER BY updated_at DESC`
       )
       .all({ userId }) as Array<{
+      vs_bot: number;
       id: string;
       room_code: string;
       state_json: string;
@@ -208,7 +259,8 @@ export class PersistenceService implements OnModuleDestroy {
       killerUserId: r.killer_user_id,
       detectiveName: r.detective_name,
       killerName: r.killer_name,
-      updatedAt: r.updated_at
+      updatedAt: r.updated_at,
+      vsBot: r.vs_bot === 1
     }));
   }
 
@@ -222,7 +274,7 @@ export class PersistenceService implements OnModuleDestroy {
     const rows = this.db
       .prepare(
         `SELECT room_code, state_json, detective_token, killer_token, detective_name, killer_name,
-                detective_user_id, killer_user_id, vs_bot
+                detective_user_id, killer_user_id, vs_bot, bot_role
          FROM games WHERE winner IS NULL`
       )
       .all() as Array<{
@@ -235,6 +287,7 @@ export class PersistenceService implements OnModuleDestroy {
       detective_user_id: string | null;
       killer_user_id: string | null;
       vs_bot: number;
+      bot_role: PlayerRole | null;
     }>;
 
     return rows.map(row => ({
@@ -246,7 +299,8 @@ export class PersistenceService implements OnModuleDestroy {
       killerName: row.killer_name,
       detectiveUserId: row.detective_user_id,
       killerUserId: row.killer_user_id,
-      vsBot: row.vs_bot === 1
+      vsBot: row.vs_bot === 1,
+      botRole: row.bot_role
     }));
   }
 

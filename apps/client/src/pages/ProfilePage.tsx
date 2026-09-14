@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Accusation, PlayerRole } from '@citykiller/shared';
 import { MOTIVE_DESCRIPTORS } from '@citykiller/shared';
 import { FONT, P } from '@/design/tokens';
 import { clearAuth, fetchProfile, loadAuth } from '@/lib/auth';
+import { Leaderboard } from '@/components/Leaderboard';
 
 interface MotiveLine {
   motiveId: string;
@@ -24,6 +26,7 @@ interface GameSummary {
   role: PlayerRole;
   won: boolean;
   opponent: string | null;
+  vsBot: boolean;
   motiveId: string;
   killerJob: string;
   killsCount: number;
@@ -32,10 +35,8 @@ interface GameSummary {
   winReason: string | null;
 }
 
-/** Зеркало ProfileStats с сервера (apps/server/src/profile.stats.ts) */
-interface ProfileStats {
-  login: string;
-  memberSince: string;
+/** Зеркало ScopeStats / ProfileStats с сервера (apps/server/src/profile.stats.ts) */
+interface ScopeStats {
   total: { games: number; wins: number };
   detective: {
     games: number;
@@ -50,6 +51,22 @@ interface ProfileStats {
   killer: { games: number; wins: number; avgKills: number; byMotive: MotiveLine[] };
   recent: GameSummary[];
 }
+
+interface ProfileStats {
+  login: string;
+  memberSince: string;
+  people: ScopeStats;
+  bot: ScopeStats;
+  all: ScopeStats;
+}
+
+type Scope = 'people' | 'bot' | 'all';
+
+const SCOPES: Array<{ id: Scope; label: string; against: string }> = [
+  { id: 'people', label: 'ПРОТИВ ЛЮДЕЙ', against: 'против живых людей' },
+  { id: 'bot', label: 'ПРОТИВ БОТА', against: 'против бота' },
+  { id: 'all', label: 'ВСЕ ПАРТИИ', against: 'против людей и бота' }
+];
 
 const INK = {
   primary: P.ink,
@@ -220,6 +237,9 @@ export function ProfilePage() {
   });
 
   const stats = profile.data;
+  const [scope, setScope] = useState<Scope>('people');
+  const view = stats?.[scope];
+  const scopeInfo = SCOPES.find(s => s.id === scope)!;
 
   return (
     <div
@@ -239,7 +259,7 @@ export function ProfilePage() {
         <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontFamily: FONT.mono, fontSize: 10, letterSpacing: '0.34em', color: INK.muted }}>
-              ЛИЧНОЕ ДЕЛО · ТОЛЬКО ПАРТИИ ПРОТИВ ЛЮДЕЙ
+              ЛИЧНОЕ ДЕЛО
             </div>
             <h1
               style={{
@@ -295,24 +315,51 @@ export function ProfilePage() {
           </div>
         )}
 
-        {stats && (
+        {stats && view && (
           <>
+            {/* раздел статистики: одна строка переключателей над всеми цифрами */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {SCOPES.map(s => {
+                const on = s.id === scope;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setScope(s.id)}
+                    style={{
+                      height: 34,
+                      padding: '0 14px',
+                      borderRadius: 4,
+                      border: `1px solid ${on ? 'oklch(0.5 0.1 76)' : 'oklch(0.32 0.016 55)'}`,
+                      background: on ? 'oklch(0.3 0.05 78)' : 'transparent',
+                      color: on ? 'oklch(0.93 0.05 82)' : INK.secondary,
+                      fontFamily: FONT.mono,
+                      fontSize: 10.5,
+                      letterSpacing: '0.14em',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {s.label} · {stats[s.id].total.games}
+                  </button>
+                );
+              })}
+            </div>
+
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <Tile label="ПАРТИЙ" value={String(stats.total.games)} note="против живых людей" />
+              <Tile label="ПАРТИЙ" value={String(view.total.games)} note={scopeInfo.against} />
               <Tile
                 label="ПОБЕД"
-                value={pct(stats.total.wins, stats.total.games)}
-                note={`${stats.total.wins} из ${stats.total.games}`}
+                value={pct(view.total.wins, view.total.games)}
+                note={`${view.total.wins} из ${view.total.games}`}
               />
               <Tile
                 label="ЗА ДЕТЕКТИВА"
-                value={pct(stats.detective.wins, stats.detective.games)}
-                note={`${stats.detective.wins} побед из ${stats.detective.games}`}
+                value={pct(view.detective.wins, view.detective.games)}
+                note={`${view.detective.wins} побед из ${view.detective.games}`}
               />
               <Tile
                 label="ЗА УБИЙЦУ"
-                value={pct(stats.killer.wins, stats.killer.games)}
-                note={`${stats.killer.wins} побед из ${stats.killer.games}`}
+                value={pct(view.killer.wins, view.killer.games)}
+                note={`${view.killer.wins} побед из ${view.killer.games}`}
               />
             </div>
 
@@ -323,26 +370,26 @@ export function ProfilePage() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: -6 }}>
                   <Tile
                     label="ПРОФЕССИЯ"
-                    value={pct(stats.detective.jobGuessed, stats.detective.accused)}
-                    note={`${stats.detective.jobGuessed} из ${stats.detective.accused} обвинений`}
+                    value={pct(view.detective.jobGuessed, view.detective.accused)}
+                    note={`${view.detective.jobGuessed} из ${view.detective.accused} обвинений`}
                   />
                   <Tile
                     label="МОТИВ"
-                    value={pct(stats.detective.motiveGuessed, stats.detective.accused)}
-                    note={`${stats.detective.motiveGuessed} из ${stats.detective.accused} обвинений`}
+                    value={pct(view.detective.motiveGuessed, view.detective.accused)}
+                    note={`${view.detective.motiveGuessed} из ${view.detective.accused} обвинений`}
                   />
                   <Tile
                     label="ОБА ПУНКТА"
-                    value={pct(stats.detective.bothGuessed, stats.detective.accused)}
-                    note={`побед без обвинения: ${stats.detective.winsWithoutAccusation}`}
+                    value={pct(view.detective.bothGuessed, view.detective.accused)}
+                    note={`побед без обвинения: ${view.detective.winsWithoutAccusation}`}
                   />
                 </div>
-                {stats.detective.byMotive.length === 0 ? (
-                  <Empty>За детектива вы ещё не играли против людей.</Empty>
+                {view.detective.byMotive.length === 0 ? (
+                  <Empty>За детектива {scopeInfo.against} вы ещё не играли.</Empty>
                 ) : (
                   <Table
                     head={['НАСТОЯЩИЙ МОТИВ', 'ПАРТИЙ', 'ПРОФЕССИЯ', 'МОТИВ', 'ПОБЕДЫ']}
-                    rows={stats.detective.byMotive.map(m => [
+                    rows={view.detective.byMotive.map(m => [
                       m.title,
                       m.games,
                       `${m.jobGuessed}/${m.games}`,
@@ -357,16 +404,16 @@ export function ProfilePage() {
               <section style={{ ...PANEL, padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <Label>УБИЙЦА · С КАКИМИ МОТИВАМИ</Label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: -6 }}>
-                  <Tile label="ПАРТИЙ" value={String(stats.killer.games)} />
-                  <Tile label="ПОБЕД" value={String(stats.killer.wins)} note={`поражений: ${stats.killer.games - stats.killer.wins}`} />
-                  <Tile label="ЖЕРТВ В СРЕДНЕМ" value={String(stats.killer.avgKills).replace('.', ',')} />
+                  <Tile label="ПАРТИЙ" value={String(view.killer.games)} />
+                  <Tile label="ПОБЕД" value={String(view.killer.wins)} note={`поражений: ${view.killer.games - view.killer.wins}`} />
+                  <Tile label="ЖЕРТВ В СРЕДНЕМ" value={String(view.killer.avgKills).replace('.', ',')} />
                 </div>
-                {stats.killer.byMotive.length === 0 ? (
-                  <Empty>За убийцу вы ещё не играли против людей.</Empty>
+                {view.killer.byMotive.length === 0 ? (
+                  <Empty>За убийцу {scopeInfo.against} вы ещё не играли.</Empty>
                 ) : (
                   <Table
                     head={['МОТИВ', 'ПАРТИЙ', 'ПОБЕД', 'ПОРАЖЕНИЙ', 'ДОЛЯ ПОБЕД']}
-                    rows={stats.killer.byMotive.map(m => [
+                    rows={view.killer.byMotive.map(m => [
                       m.title,
                       m.games,
                       m.wins,
@@ -378,23 +425,47 @@ export function ProfilePage() {
               </section>
             </div>
 
+            {/* рейтинг: где вы среди остальных */}
+            <section style={{ ...PANEL, padding: 18 }}>
+              <Label>РЕЙТИНГ ГОРОДА</Label>
+              <Leaderboard me={stats.login} />
+            </section>
+
             {/* последние дела */}
             <section style={{ ...PANEL, padding: 18 }}>
               <Label>ПОСЛЕДНИЕ ДЕЛА</Label>
-              {stats.recent.length === 0 ? (
+              {view.recent.length === 0 ? (
                 <Empty>
-                  Завершённых партий против людей пока нет. Партии с ботом и гостевые партии в кабинет не
-                  попадают.
+                  Завершённых партий {scopeInfo.against} пока нет. Гостевые партии в кабинет не попадают —
+                  только сыгранные под аккаунтом.
                 </Empty>
               ) : (
                 <Table
                   head={['КОГДА', 'РОЛЬ', 'ПРОТИВ', 'ИСХОД', 'ПОДРОБНОСТИ']}
-                  rows={stats.recent.map(g => [
+                  rows={view.recent.map(g => [
                     <span style={{ fontFamily: FONT.mono, fontSize: 11.5, color: INK.secondary }}>
                       {formatDate(g.finishedAt)}
                     </span>,
                     g.role === 'detective' ? 'детектив' : 'убийца',
-                    g.opponent ?? '—',
+                    <span>
+                      {g.opponent ?? '—'}
+                      {g.vsBot && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontFamily: FONT.mono,
+                            fontSize: 9,
+                            letterSpacing: '0.12em',
+                            padding: '1px 5px',
+                            borderRadius: 2,
+                            border: '1px solid oklch(0.38 0.015 55)',
+                            color: INK.secondary
+                          }}
+                        >
+                          БОТ
+                        </span>
+                      )}
+                    </span>,
                     <span style={{ color: g.won ? GOOD : BAD }}>{g.won ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ'}</span>,
                     <span style={{ fontFamily: FONT.sans, fontSize: 12.5, color: INK.secondary, lineHeight: 1.5 }}>
                       {g.role === 'detective' ? (

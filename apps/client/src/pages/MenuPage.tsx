@@ -10,6 +10,7 @@ import {
   type StoredAuth
 } from '@/lib/auth';
 import { Rules } from '@/components/Rules';
+import { Leaderboard } from '@/components/Leaderboard';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { PlayerRole } from '@citykiller/shared';
@@ -77,7 +78,7 @@ export function MenuPage() {
   const [role, setRole] = useState<PlayerRole>('detective');
   const [mode, setMode] = useState<Mode>('bot');
   const [joinCode, setJoinCode] = useState('');
-  const [panel, setPanel] = useState<'rules' | 'archive'>('rules');
+  const [panel, setPanel] = useState<'rules' | 'leaders' | 'archive'>('rules');
   const [error, setError] = useState<string | null>(null);
 
   // аккаунт: с ним партии против людей идут в кабинет, а имя в игре — логин
@@ -684,6 +685,7 @@ export function MenuPage() {
             {(
               [
                 { id: 'rules', label: 'ПРАВИЛА' },
+                { id: 'leaders', label: 'РЕЙТИНГ' },
                 { id: 'archive', label: `АРХИВ · ${history.data?.length ?? 0}` }
               ] as const
             ).map(t => {
@@ -714,6 +716,12 @@ export function MenuPage() {
           {panel === 'rules' && (
             <div style={{ flex: 1, minHeight: 0 }}>
               <Rules withMatch />
+            </div>
+          )}
+
+          {panel === 'leaders' && (
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 15px 20px' }}>
+              <Leaderboard me={auth?.user.login ?? null} />
             </div>
           )}
 

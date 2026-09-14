@@ -26,7 +26,7 @@ export interface Room {
   players: Partial<Record<PlayerRole, PlayerSlot>>;
 }
 
-const BOT_NAME: Record<PlayerRole, string> = {
+export const BOT_NAME: Record<PlayerRole, string> = {
   detective: 'Инспектор Кроу',
   killer: 'Тень'
 };
@@ -69,7 +69,9 @@ export class RoomsService implements OnModuleInit {
         };
       }
       // слот бота восстанавливаем ботом, иначе после перезапуска сервера партия зависнет
-      if (stored.vsBot) {
+      if (stored.botRole && room.players[stored.botRole]) {
+        room.players[stored.botRole]!.isBot = true;
+      } else if (stored.vsBot) {
         for (const role of ['detective', 'killer'] as PlayerRole[]) {
           const slot = room.players[role];
           if (slot && !slot.userId && slot.username === BOT_NAME[role]) slot.isBot = true;
@@ -213,7 +215,8 @@ export class RoomsService implements OnModuleInit {
       killerName: room.players.killer?.username ?? null,
       detectiveUserId: room.players.detective?.userId ?? null,
       killerUserId: room.players.killer?.userId ?? null,
-      vsBot: this.botRole(room) !== null
+      vsBot: this.botRole(room) !== null,
+      botRole: this.botRole(room)
     });
   }
 }
